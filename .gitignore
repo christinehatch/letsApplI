@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+
+# Generated output
+DAILY_OUTPUT.md
