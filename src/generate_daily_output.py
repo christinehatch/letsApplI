@@ -1,13 +1,14 @@
 """
-v0: Generate a daily, prioritized job feed from predefined inputs.
+v1.1: Generate a daily, prioritized job feed from multiple source adapters.
 This script is intentionally read-only and rule-based.
 """
 
-from datetime import datetime
-from sources.example_company import fetch_jobs
-jobs = fetch_jobs()
 
-# Fake job data (this will later be replaced by real sources)
+from datetime import datetime
+from sources.example_company import fetch_jobs as fetch_company_jobs
+from sources.example_board import fetch_jobs as fetch_board_jobs
+jobs = fetch_company_jobs() + fetch_board_jobs()
+# Input data composed from source adapters
 def is_high_priority(job):
     return (
         job["first_seen_hours_ago"] <= 24

@@ -1,0 +1,139 @@
+# letsA(ppl)I — Project Phases
+
+This document defines the **intentional, finite phases** of letsA(ppl)I.
+
+Each phase is:
+- independently valuable
+- demoable on its own
+- explicitly scoped to avoid automation creep
+
+This is not a promise of future work.  
+It is a **map for disciplined exploration**.
+
+---
+
+## Phase 0 — Output Contract & Rules (COMPLETE)
+
+**Purpose:**  
+Prove that job prioritization can be done using **explicit, inspectable rules**, producing a human-readable daily output.
+
+**What exists:**
+- A deterministic prioritization model (High / Medium / Low)
+- Clear, explainable reasons for why each job appears
+- A generated `DAILY_OUTPUT.md` artifact
+
+**Explicitly not included:**
+- No scraping
+- No AI / LLMs
+- No personalization
+- No automation
+
+**Completion criteria:**  
+A stable output format that humans can reason about without trusting a black box.
+
+---
+
+## Phase 1 — Real Inputs via Source Adapters (COMPLETE)
+
+**Purpose:**  
+Prove the system can accept **realistic inputs** without modifying core logic.
+
+### Phase 1.0
+- Replace fake job data with a single source adapter
+
+### Phase 1.1
+- Compose multiple source adapters
+- Preserve the same output contract and prioritization logic
+
+**What exists:**
+- Source adapters as isolated modules
+- Composition of multiple sources via simple concatenation
+- No refactors to prioritization or formatting code
+
+**Completion criteria:**  
+Adding a new source means *adding a file*, not changing the system.
+
+---
+
+## Phase 2 — Deterministic “Same-Day” Detection (PLANNED)
+
+**Purpose:**  
+Make “new today” an **explicit, explainable concept**, not an assumption.
+
+**What may be added:**
+- Deterministic recency rules (timestamps, feed order, known refresh patterns)
+- Clear explanation in output of *how* recency was determined
+
+**Explicitly not included:**
+- No background jobs
+- No schedulers
+- No heuristics without explanation
+
+**Completion criteria:**  
+Humans can understand *why* a job is considered new, even when it’s wrong.
+
+---
+
+## Phase 3 — Guided Human Actions (PLANNED)
+
+**Purpose:**  
+Reduce cognitive load **after** jobs are surfaced, without automating decisions.
+
+**What may be added:**
+- Suggested next steps (resume focus, outreach ideas, questions to ask)
+- Language that supports thinking, not action
+
+**Explicitly not included:**
+- No auto-apply
+- No message sending
+- No impersonation
+
+**Completion criteria:**  
+The system helps users decide what to do, but never does it for them.
+
+---
+
+## Phase 4 — Optional Personal Context (PLANNED)
+
+**Purpose:**  
+Allow light personalization **without memory or identity locking**.
+
+**What may be added:**
+- Session-scoped preferences (role type, location, constraints)
+- Fully visible and reversible context
+
+**Explicitly not included:**
+- No long-term memory
+- No inferred preferences
+- No behavioral modeling
+
+**Completion criteria:**  
+Personalization is transparent, optional, and non-persistent.
+
+---
+
+## Phase 5 — Stop Point (INTENTIONAL)
+
+**Purpose:**  
+Define what this project will **never** become.
+
+**Explicit non-goals:**
+- Full automation
+- Personality inference
+- Resume scoring
+- Hiring decisions
+- “AI that knows you better than you know yourself”
+
+**Completion criteria:**  
+Further work would require a new charter and a new name.
+
+---
+
+## Current Status
+
+- Phase 0: ✅ Complete
+- Phase 1: ✅ Complete
+- Phase 2+: 🚧 Planned, not committed
+
+This project is considered **demo-complete after Phase 1**.
+
