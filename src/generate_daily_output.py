@@ -7,24 +7,25 @@ This script is intentionally read-only and rule-based.
 from datetime import datetime
 from sources.example_company import fetch_jobs as fetch_company_jobs
 from sources.example_board import fetch_jobs as fetch_board_jobs
+
+def hours_since(first_seen_at, now):
+    delta = now - first_seen_at
+    return int(delta.total_seconds() // 3600)
+
 jobs = fetch_company_jobs() + fetch_board_jobs()
 # Input data composed from source adapters
-def is_high_priority(job):
-    return (
-        job["first_seen_hours_ago"] <= 24
-        and "Engineer" in job["title"]
-    )
-def is_medium_priority(job):
-    return job["first_seen_hours_ago"] <= 24
+def is_high_priority(job, now):
+    return hours_since(job["first_seen_at"], now) <= 24 and "Engineer" in job["title"]
+def is_medium_priority(job, now):
+    return hours_since(job["first_seen_at"], now) <= 24
 
-def is_low_priority(job):
-    return job["first_seen_hours_ago"] > 24
-
-def build_reasons(job):
+def is_low_priority(job, now):
+    return hours_since(job["first_seen_at"], now) > 24
+def build_reasons(job, now):
     reasons = []
 
-    if job["first_seen_hours_ago"] <= 24:
-        reasons.append("Posted today")
+    if job["first_seen_at"].date() == now.date():
+        reasons.append("First seen today")
 
     if "Engineer" in job["title"]:
         reasons.append("Matches core role keyword")
@@ -33,16 +34,20 @@ def build_reasons(job):
         reasons.append("Referral connection exists")
 
     return reasons
-def format_job(job):
+
+def format_job(job, now):
+    first_seen_at = job["first_seen_at"]
+    hours_ago = hours_since(first_seen_at, now)
+
     lines = [
         f"**{job['title']}**",
         f"- Company: {job['company']}",
         f"- Location: {job['location']}",
         f"- Source: {job['source']}",
-        f"- First seen: {job['first_seen_hours_ago']} hours ago",
+        f"- First seen: {hours_ago} hours ago (first seen at {first_seen_at.strftime('%I:%M %p')})",
     ]
 
-    reasons = build_reasons(job)
+    reasons = build_reasons(job, now)
     if reasons:
         lines.append("- Why this is here:")
         for r in reasons:
@@ -56,17 +61,17 @@ def format_job(job):
 
 def generate_markdown(jobs):
     today = datetime.now().strftime("%Y-%m-%d")
+    now = datetime.now()
 
-    high = [j for j in jobs if is_high_priority(j)]
-    medium = [j for j in jobs if is_medium_priority(j) and j not in high]
-    low = [j for j in jobs if is_low_priority(j)]
+    high = [j for j in jobs if is_high_priority(j, now)]
+    medium = [j for j in jobs if is_medium_priority(j, now) and j not in high]
+    low = [j for j in jobs if is_low_priority(j, now)]
 
     lines = [
-        "# letsA(ppl)I — Daily Job Feed",
         f"Date: {today}",
         "",
         "## 🔥 New Today (High Priority)",
-        "_Posted today and matches core role signals._",
+        "_First seen today and matches core role signals._",
         "",
     ]
 
@@ -74,14 +79,14 @@ def generate_markdown(jobs):
         lines.append("_No high-priority jobs today._\n")
 
     for job in high:
-        lines.extend(format_job(job))
+        lines.extend(format_job(job, now))
 
     lines.extend([
         "",
         "## 🟡 New but Lower Priority",
         "",
         "",
-        "_Posted today but with weaker signals._",
+        "_First seen today but with weaker signals._",
         "",
     ])
 
@@ -89,7 +94,7 @@ def generate_markdown(jobs):
         lines.append("_No medium-priority jobs today._\n")
 
     for job in medium:
-        lines.extend(format_job(job))
+        lines.extend(format_job(job, now))
 
     lines.extend([
         "",
@@ -104,8 +109,10 @@ def generate_markdown(jobs):
     if not low:
         lines.append("_No deprioritized jobs today._\n")
 
+
     for job in low:
-        lines.extend(format_job(job))
+        lines.extend(format_job(job, now))
+
 
     return "\n".join(lines)
 if __name__ == "__main__":

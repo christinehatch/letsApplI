@@ -1,15 +1,14 @@
+from datetime import datetime, timedelta
+
 def fetch_jobs():
-    """
-    V1 source adapter.
-    Returns jobs in the standard internal format.
-    """
+    now = datetime.now()
     return [
         {
             "title": "Example Product Engineer",
             "company": "ExampleCo",
             "location": "Remote",
             "source": "ExampleCo Careers",
-            "first_seen_hours_ago": 4,
+            "first_seen_at": now - timedelta(hours=4),
             "referral": None,
         }
     ]
