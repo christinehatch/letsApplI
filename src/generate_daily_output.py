@@ -4,7 +4,9 @@ This script is intentionally read-only and rule-based.
 """
 
 from datetime import datetime
-from job_data import jobs
+from sources.example_company import fetch_jobs
+jobs = fetch_jobs()
+
 # Fake job data (this will later be replaced by real sources)
 def is_high_priority(job):
     return (

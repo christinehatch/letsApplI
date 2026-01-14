@@ -7,3 +7,6 @@ __pycache__/
 
 # Generated output
 DAILY_OUTPUT.md
+
+# macOS
+.DS_Store
