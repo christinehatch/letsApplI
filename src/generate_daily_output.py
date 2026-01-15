@@ -3,11 +3,16 @@ v1.1: Generate a daily, prioritized job feed from multiple source adapters.
 This script is intentionally read-only and rule-based.
 """
 
+# “First observed” timestamps reflect when letsA(ppl)I first saw a role,
+# not when the employer originally posted it.
+
+
 
 from datetime import datetime
 from sources.example_company import fetch_jobs as fetch_company_jobs
 from sources.example_board import fetch_jobs as fetch_board_jobs
 from pathlib import Path
+from sources.stripe_careers import fetch_jobs as fetch_stripe_jobs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -15,7 +20,12 @@ def hours_since(first_seen_at, now):
     delta = now - first_seen_at
     return int(delta.total_seconds() // 3600)
 
-jobs = fetch_company_jobs() + fetch_board_jobs()
+jobs = (
+    fetch_company_jobs()
+    + fetch_board_jobs()
+    + fetch_stripe_jobs()
+)
+
 # Input data composed from source adapters
 def is_high_priority(job, now):
     return hours_since(job["first_seen_at"], now) <= 24 and "Engineer" in job["title"]
@@ -47,9 +57,10 @@ def format_job(job, now):
         f"- Company: {job['company']}",
         f"- Location: {job['location']}",
         f"- Source: {job['source']}",
-        f"- First seen: {hours_ago} hours ago (first seen at {first_seen_at.strftime('%I:%M %p')})",
+        f"- First observed by letsA(ppl)I: {hours_ago} hours ago (at {first_seen_at.strftime('%I:%M %p')})",
     ]
-
+    if job.get("url"):
+        lines.append(f"- Apply / View: {job['url']}")
     reasons = build_reasons(job, now)
     if reasons:
         lines.append("- Why this is here:")
