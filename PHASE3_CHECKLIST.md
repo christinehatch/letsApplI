@@ -1,4 +1,3 @@
-# PHASE3_CHECKLIST.md
 # Phase 3 — Real Data Ingestion (Read-Only)
 
 ## Purpose
@@ -20,18 +19,18 @@ while preserving explainability, determinism, and human trust.
 - [x] Source is read-only
 - [x] Source scope explicitly constrained
 
-**Selected source:** Adobe Careers (Workday-backed)  
-**Scope constraint:** Northern California locations only
+**Selected source:** Stripe Careers (Greenhouse-backed)  
+**Scope constraint:** Explicit location strings only (no inference)
 
 ---
 
 ## Compliance & Access
 
-- [ ] robots.txt explicitly checked for relevant endpoints
-- [ ] No login, cookies, or authenticated requests required
-- [ ] No JS execution or headless browser use
-- [ ] Clear User-Agent identifying read-only purpose
-- [ ] Conservative rate limits defined (≤ 1 req/sec)
+- [x] robots.txt checked for relevant endpoints
+- [x] No login, cookies, or authenticated requests required
+- [x] No JS execution or headless browser use
+- [x] Read-only GET requests only
+- [x] Public JSON endpoint verified
 
 If access is disallowed at any point, Phase 3 stops.
 
@@ -39,50 +38,69 @@ If access is disallowed at any point, Phase 3 stops.
 
 ## Adapter Contract
 
-- [ ] Adapter lives in `src/sources/`
-- [ ] Adapter is read-only
-- [ ] Adapter returns a list of job dicts only
-- [ ] Adapter does not modify or rank jobs
+- [x] Adapter lives in `src/sources/`
+- [x] Adapter is read-only
+- [x] Adapter returns a list of job dicts
+- [x] Adapter does not modify or rank jobs
+- [x] Adapter maps external data into normalized schema
 
 ### Required job fields
-- `source` (e.g. `"stripe"`)
-- `source_job_id` (stable per posting)
+- `source`
 - `title`
 - `company`
-- `location` (string, unmodified)
+- `location`
+- `first_seen_at`
+
+### Optional job fields
 - `url`
-- `first_seen_at` (assigned by pipeline, not adapter)
+- `source_job_id`
+- `referral`
 
 ### Explicitly disallowed
 - Posting date inference
 - “Likely new” heuristics
 - Ranking logic
 - Persistence
+- Automation
 
 ---
 
-## Location Filtering Rules (Explicit)
+## Location Rules (Explicit)
 
-- Location filtering is **string-based only**
+- Location handling is **string-based only**
 - No geocoding
-- No ZIP-based inference
-- No “CA implies Northern CA”
+- No ZIP inference
+- No regional assumptions
 
-Allowed matches include:
-- San Jose, CA
-- San Francisco, CA
-- San Mateo, CA
-- Santa Clara, CA
-- Sunnyvale, CA
-- Mountain View, CA
-- Cupertino, CA
-- Redwood City, CA
-- “Northern California” (if explicitly labeled)
+Filtering relies only on exact strings provided by the source.
 
 ---
 
-## Testing & Verification
+## Rendering & UX
 
-- [ ] Parsing logic tested using sa
+- [x] Real jobs appear in `DAILY_OUTPUT.md`
+- [x] Output format unchanged
+- [x] “First observed” language clarified
+- [x] Clickable job links rendered when available
+- [x] Missing optional fields handled safely
 
+---
 
+## Schema Stability (Phase 3.5)
+
+- [x] Minimum adapter schema defined
+- [x] Optional fields documented
+- [x] Renderer made defensive
+- [x] Fixtures added for each adapter
+
+---
+
+## Completion Criteria
+
+Phase 3 is complete when:
+- A real job source appears in output
+- The system remains deterministic and explainable
+- No automation or persistence is introduced
+- Schema expectations are explicit
+
+**Status:** ✅ Complete
