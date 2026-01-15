@@ -55,7 +55,7 @@ Adding a new source means *adding a file*, not changing the system.
 
 ---
 
-## Phase 2 — Deterministic “Same-Day” Detection (PLANNED)
+## Phase 2 — Deterministic “Same-Day” Detection (COMPLETE)
 
 **Purpose:**  
 Make “new today” an **explicit, explainable concept**, not an assumption.
@@ -74,48 +74,52 @@ Humans can understand *why* a job is considered new, even when it’s wrong.
 
 ---
 
-## Phase 3 — Guided Human Actions (PLANNED)
+## Phase 3 — Real Data Ingestion (Read-Only)
+
+**Purpose:**  
+Transition from simulated inputs to **one real, verifiable data source** without changing core logic or introducing automation.
+
+**What may be added:**
+- A single real website adapter (e.g., one company careers page)
+- Read-only data fetching
+- Clean mapping into the existing adapter contract
+- Explicit compliance with robots.txt and ToS
+
+**Explicitly not included:**
+- No persistence
+- No background jobs
+- No posting-date inference
+- No ranking logic inside adapters
+
+**Completion criteria:**  
+A real job source appears in `DAILY_OUTPUT.md` using the same rules and explanations as demo data.
+
+---
+
+## Phase 4 — State & Memory
+
+**Purpose:**  
+Improve accuracy of “first seen” detection by persisting previously observed jobs across runs.
+
+**What may be added:**
+- Local persistence (JSON or SQLite)
+- Stable mapping of `{source, source_job_id → first_seen_at}`
+- Deterministic rehydration of state
+
+**Explicitly not included:**
+- No ML or prediction
+- No personalization
+- No inferred preferences
+
+**Completion criteria:**  
+“New today” remains accurate across restarts and repeated runs.
+
+---
+
+## Phase 5 — Guided Human Actions
 
 **Purpose:**  
 Reduce cognitive load **after** jobs are surfaced, without automating decisions.
-
-**What may be added:**
-- Suggested next steps (resume focus, outreach ideas, questions to ask)
-- Language that supports thinking, not action
-
-**Explicitly not included:**
-- No auto-apply
-- No message sending
-- No impersonation
-
-**Completion criteria:**  
-The system helps users decide what to do, but never does it for them.
-
----
-
-## Phase 4 — Optional Personal Context (PLANNED)
-
-**Purpose:**  
-Allow light personalization **without memory or identity locking**.
-
-**What may be added:**
-- Session-scoped preferences (role type, location, constraints)
-- Fully visible and reversible context
-
-**Explicitly not included:**
-- No long-term memory
-- No inferred preferences
-- No behavioral modeling
-
-**Completion criteria:**  
-Personalization is transparent, optional, and non-persistent.
-
----
-
-## Phase 5 — Stop Point (INTENTIONAL)
-
-**Purpose:**  
-Define what this project will **never** become.
 
 **Explicit non-goals:**
 - Full automation
@@ -133,7 +137,8 @@ Further work would require a new charter and a new name.
 
 - Phase 0: ✅ Complete
 - Phase 1: ✅ Complete
-- Phase 2+: 🚧 Planned, not committed
+- Phase 2: ✅ Complete
+- Phase 3: 🚧 Planned, not committed
 
 This project is considered **demo-complete after Phase 1**.
 

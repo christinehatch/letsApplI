@@ -7,6 +7,9 @@ This script is intentionally read-only and rule-based.
 from datetime import datetime
 from sources.example_company import fetch_jobs as fetch_company_jobs
 from sources.example_board import fetch_jobs as fetch_board_jobs
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def hours_since(first_seen_at, now):
     delta = now - first_seen_at
@@ -117,8 +120,9 @@ def generate_markdown(jobs):
     return "\n".join(lines)
 if __name__ == "__main__":
     output = generate_markdown(jobs)
-    with open("DAILY_OUTPUT.md", "w") as f:
+    output_path = REPO_ROOT / "DAILY_OUTPUT.md"
+    with open(output_path, "w") as f:
         f.write(output)
 
     print("Generated DAILY_OUTPUT.md")
-
+    print(f"Generated {output_path}")
