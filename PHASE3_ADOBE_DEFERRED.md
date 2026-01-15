@@ -1,3 +1,9 @@
+> Status: Deferred during Phase 3
+>
+> Reason: Adobe careers is fronted by Phenom People. No clearly public,
+> read-only jobs API was observed that satisfies Phase 3 constraints.
+> Adobe is a candidate for later human-guided phases.
+
 # Phase 3.2 — Adobe Careers Adapter Contract
 
 This document defines the **non-negotiable contract** for the Adobe Careers

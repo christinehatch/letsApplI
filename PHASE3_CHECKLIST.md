@@ -45,7 +45,7 @@ If access is disallowed at any point, Phase 3 stops.
 - [ ] Adapter does not modify or rank jobs
 
 ### Required job fields
-- `source` (e.g. `"adobe"`)
+- `source` (e.g. `"stripe"`)
 - `source_job_id` (stable per posting)
 - `title`
 - `company`
