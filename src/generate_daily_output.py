@@ -15,16 +15,22 @@ from pathlib import Path
 from sources.stripe_careers import fetch_jobs as fetch_stripe_jobs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+REQUIRED_FIELDS = {"source", "title", "company", "location", "first_seen_at"}
 
+def assert_min_schema(job: dict) -> bool:
+    return REQUIRED_FIELDS.issubset(job.keys())
 def hours_since(first_seen_at, now):
     delta = now - first_seen_at
     return int(delta.total_seconds() // 3600)
 
-jobs = (
-    fetch_company_jobs()
-    + fetch_board_jobs()
-    + fetch_stripe_jobs()
-)
+jobs = [
+    j for j in (
+        fetch_company_jobs()
+        + fetch_board_jobs()
+        + fetch_stripe_jobs()
+    )
+    if assert_min_schema(j)
+]
 
 # Input data composed from source adapters
 def is_high_priority(job, now):
