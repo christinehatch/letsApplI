@@ -6,6 +6,13 @@ STATE_DIR = Path(__file__).resolve().parent.parent / "state"
 STATE_FILE = STATE_DIR / "seen_jobs.json"
 
 
+def job_identity(job: dict) -> str:
+    """
+    Canonical, deterministic job identity.
+    """
+    return f"{job['source']}:{job['source_job_id']}"
+
+
 def load_seen_jobs() -> dict:
     if not STATE_FILE.exists():
         return {}
@@ -17,6 +24,24 @@ def save_seen_jobs(seen: dict) -> None:
     STATE_FILE.write_text(json.dumps(seen, indent=2))
 
 
-def job_key(job: dict) -> str:
-    return f"{job['source']}:{job.get('source_job_id', job['title'])}"
+def apply_first_seen(jobs: list[dict], now: datetime) -> list[dict]:
+    """
+    Assign first_seen_at deterministically using local state.
+    """
+    seen = load_seen_jobs()
+    updated = False
 
+    for job in jobs:
+        key = job_identity(job)
+
+        if key in seen:
+            job["first_seen_at"] = datetime.fromisoformat(seen[key])
+        else:
+            job["first_seen_at"] = now
+            seen[key] = now.isoformat()
+            updated = True
+
+    if updated:
+        save_seen_jobs(seen)
+
+    return jobs
