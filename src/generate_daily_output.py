@@ -9,6 +9,7 @@ This script is intentionally read-only and rule-based.
 
 
 from datetime import datetime
+from state import load_seen_jobs, save_seen_jobs, job_key
 from sources.example_company import fetch_jobs as fetch_company_jobs
 from sources.example_board import fetch_jobs as fetch_board_jobs
 from pathlib import Path
@@ -31,6 +32,25 @@ jobs = [
     )
     if assert_min_schema(j)
 ]
+
+def apply_first_seen(jobs, now):
+    seen = load_seen_jobs()
+    updated = False
+
+    for job in jobs:
+        key = job_key(job)
+
+        if key in seen:
+            job["first_seen_at"] = datetime.fromisoformat(seen[key])
+        else:
+            job["first_seen_at"] = now
+            seen[key] = now.isoformat()
+            updated = True
+
+    if updated:
+        save_seen_jobs(seen)
+
+    return jobs
 
 # Input data composed from source adapters
 def is_high_priority(job, now):
@@ -136,6 +156,9 @@ def generate_markdown(jobs):
 
     return "\n".join(lines)
 if __name__ == "__main__":
+    now = datetime.now().replace(microsecond=0)
+    jobs = apply_first_seen(jobs, now)
+
     output = generate_markdown(jobs)
     output_path = REPO_ROOT / "DAILY_OUTPUT.md"
     with open(output_path, "w") as f:

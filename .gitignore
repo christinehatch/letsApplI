@@ -10,3 +10,7 @@ DAILY_OUTPUT.md
 
 # macOS
 .DS_Store
+
+
+#Seen Jobs
+state/seen_jobs.json
