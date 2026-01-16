@@ -9,14 +9,23 @@ This script is intentionally read-only and rule-based.
 
 
 from datetime import datetime
-from state import load_seen_jobs, save_seen_jobs, job_key
+from pathlib import Path
+
+from state import apply_first_seen
 from sources.example_company import fetch_jobs as fetch_company_jobs
 from sources.example_board import fetch_jobs as fetch_board_jobs
-from pathlib import Path
 from sources.stripe_careers import fetch_jobs as fetch_stripe_jobs
 
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
-REQUIRED_FIELDS = {"source", "title", "company", "location", "first_seen_at"}
+REQUIRED_FIELDS = {
+    "source",
+    "source_job_id",
+    "title",
+    "company",
+    "location",
+    "first_seen_at",
+}
 
 def assert_min_schema(job: dict) -> bool:
     return REQUIRED_FIELDS.issubset(job.keys())
@@ -32,25 +41,6 @@ jobs = [
     )
     if assert_min_schema(j)
 ]
-
-def apply_first_seen(jobs, now):
-    seen = load_seen_jobs()
-    updated = False
-
-    for job in jobs:
-        key = job_key(job)
-
-        if key in seen:
-            job["first_seen_at"] = datetime.fromisoformat(seen[key])
-        else:
-            job["first_seen_at"] = now
-            seen[key] = now.isoformat()
-            updated = True
-
-    if updated:
-        save_seen_jobs(seen)
-
-    return jobs
 
 # Input data composed from source adapters
 def is_high_priority(job, now):
