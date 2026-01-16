@@ -1,10 +1,10 @@
 # PHASE 5 — Job ↔ Evidence Gap Surfacing (Checklist)
 
-**Status:** Design phase  
+**Status:** Design-locked (spec only)  
 **Scope:** Read-only, user-initiated analysis  
 **Non-goal:** Automation, scoring, or judgment
 
-Phase 5 introduces guided comparison between a job posting and a user’s existing evidence (e.g., resume), while preserving user agency, neutrality, and reversibility.
+Phase 5 introduces **guided comparison between a job posting and a user’s existing evidence (e.g., resume)** while preserving user agency, neutrality, and reversibility.
 
 This checklist defines **what Phase 5 is allowed to do, what it must never do, and the invariants that must hold before any code is written.**
 
@@ -12,7 +12,7 @@ This checklist defines **what Phase 5 is allowed to do, what it must never do, a
 
 ## 1. Entry Conditions (Must Be True)
 
-- [ ] Phase 4 is complete and locked
+- [x] Phase 4 is complete and locked
 - [ ] Job listings are surfaced without recommendations or scoring
 - [ ] User explicitly selects a single job to explore
 - [ ] User explicitly provides resume or evidence (paste or file)
@@ -118,7 +118,7 @@ Phase 5 must **not** include:
 
 ---
 
-## 8. Completion Criteria (Phase 5)
+## 8. Completion Criteria (Phase 5 Overall)
 
 Phase 5 can be considered complete when:
 
@@ -136,4 +136,50 @@ Phase 5 can be considered complete when:
 > **It enables reflection, not decisions.**  
 > **People remain the authority.**
 
+---
 
+## 9. Phase 5.1 — Guided Job → Evidence Gap Surfacing (Spec Only)
+
+**Goal:**  
+Allow a user to explore *what a job posting explicitly asks for* versus *what their provided evidence explicitly shows*.
+
+This phase introduces **visibility**, not assessment.
+
+No code beyond controlled parsing and formatting is permitted.
+
+---
+
+## 10. Phase 5.1.1 — Interface Constraint (Design Lock)
+
+**Initial implementation is CLI-first.**
+
+- [x] User pastes a job posting (text or URL → text)
+- [x] User pastes resume or evidence text
+- [x] System outputs a single, human-readable Markdown report
+- [x] No UI, browser automation, or background processing
+- [x] No persistence of job or resume content
+
+This constraint exists to:
+- Preserve transparency
+- Enable fast iteration
+- Avoid premature UI or plugin coupling
+
+This does **not** define the long-term interface.
+Future interfaces (UI, plugin, chat-based) must preserve
+all Phase 5 invariants before being considered.
+
+---
+
+## 11. Phase 5.1.1 — Evidence Highlighting (COMPLETE)
+
+- [x] CLI-first flow remains unchanged
+- [x] Explicit requirement → resume line matching only
+- [x] No inference or paraphrasing
+- [x] Evidence shown via quoted resume lines
+- [x] Missing evidence clearly labeled as “not visible”
+- [x] Neutral, observational copy enforced
+- [x] Output rendered as human-readable Markdown
+- [x] No scoring, ranking, or recommendations introduced
+
+**Invariant:**  
+This phase surfaces *visibility*, not capability.
