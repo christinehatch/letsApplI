@@ -2,7 +2,7 @@
 
 *Read as “let’s apply.” AI at the edges, people at the center.*
 
-**letsA(ppl)I** is a human-in-the-loop application support agent designed to reduce job-search friction by surfacing newly posted roles, prioritizing early opportunities, and assisting with application preparation — without automating submission or impersonating the user.
+**letsA(ppl)I** is a human-in-the-loop application support agent designed to reduce job-search friction by surfacing newly posted roles, prioritizing early opportunities, and surfacing newly posted roles, prioritizing early opportunities, and supporting application preparation — without automating submission or impersonating the user.
 
 The system narrows the search space, prepares drafts, and highlights potential referral connections, while keeping all decisions and actions under explicit human control.
 
@@ -16,7 +16,7 @@ The system narrows the search space, prepares drafts, and highlights potential r
 
 ## What This Version Does (v0)
 
-This version generates a daily, prioritized job feed from predefined inputs using explicit, rule-based logic.
+This version generates a daily, prioritized job feed from a mix of demo inputs and one real, read-only job source using explicit, rule-based logic.
 
 It:
 - Groups roles by attention priority (🔥 / 🟡 / 🧊)
@@ -25,7 +25,24 @@ It:
 - Explains *why* each role appears in the feed
 
 It does not:
-- Fetch live data
+- Continuously poll or automate live data collection
 - Submit applications
 - Make career decisions
 - Act on the user’s behalf
+- Track user behavior or personalize recommendations
+
+
+---
+
+## State & Memory
+
+letsA(ppl)I maintains a small, local record of previously observed jobs to ensure that  
+“first observed” timestamps remain accurate across runs.
+
+This memory:
+- Stores only `(source, source_job_id → first_seen_at)`
+- Reflects when the system first saw a role, not when the employer posted it
+- Is fully local, human-readable, and inspectable
+- Can be reset at any time by deleting the state file
+
+No user behavior, preferences, or actions are recorded.
