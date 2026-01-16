@@ -172,11 +172,19 @@ This phase surfaces *visibility*, not capability.
 
 ---
 
+## Phase 5.2 — Evidence Classification (DESIGN LOCKED)
+
+Status: 🔒 Specification complete  
+Scope: Text-only classification of evidence types  
+Code: Not yet written
+
+---
+
 ## 11. Phase 5 Completion Criteria (Overall)
 
 Phase 5 may advance to LLM-assisted steps **only after**:
 
-- [ ] Phase 5.2 evidence classification is design-locked
+- [x] Phase 5.2 evidence classification is design-locked
 - [ ] Phase 5.3 language guardrails are specified
 - [ ] All outputs remain reversible and user-controlled
 - [ ] No automated conclusions are introduced
