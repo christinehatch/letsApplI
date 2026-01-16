@@ -14,3 +14,8 @@ DAILY_OUTPUT.md
 
 #Seen Jobs
 state/seen_jobs.json
+
+#input files
+job.txt
+resume.txt
+
