@@ -41,7 +41,7 @@ This phase adds continuity, not intelligence.
 
 - [x] State file is human-readable
 - [x] Deleting the state resets memory
-- [ ] Memory behavior documented
+- [x] Memory behavior documented
 
 ---
 

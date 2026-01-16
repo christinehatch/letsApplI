@@ -139,7 +139,8 @@ Further work would require a new charter and a new name.
 - Phase 1: ✅ Complete
 - Phase 2: ✅ Complete
 - Phase 3: ✅ Complete
-- Phase 4: 🚧 Planned, not committed
+- Phase 4: ✅ Complete
+- Phase 5: 🚧 Planned, not committed
 
 This project is considered **demo-complete after Phase 1**.
 
