@@ -80,6 +80,20 @@ It is simply **unmapped territory**.
 
 ---
 
+### Ambiguous Evidence Handling
+
+When comparing job requirements to resume evidence, ambiguity must be handled conservatively.
+
+- If a requirement is partially implied but not explicitly stated, it must be treated as **not present**
+- The system must not speculate, infer intent, or “read between the lines”
+- Ambiguity is surfaced neutrally (e.g., *“This requirement is not explicitly mentioned”*)
+- No clarification questions are asked automatically
+
+This rule exists to prevent interpretive creep and to ensure that all surfaced gaps are based solely on observable, inspectable text.
+
+---
+
+
 ## Allowed Outputs (Phase 5.1)
 
 The system may generate:
