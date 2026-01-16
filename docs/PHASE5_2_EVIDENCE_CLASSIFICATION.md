@@ -64,19 +64,188 @@ If it is not textually supported, it cannot be upgraded.
 
 ---
 
-## Classification Rules (Hard Invariants)
+# Phase 5.2 — Evidence Classification (Invariant Lock)
 
-- No scoring
-- No ranking
-- No weighting
-- No “fit” language
-- No confidence estimates
-- No career advice
+**Status:** Design-locked (no code yet)  
+**Depends on:** Phase 5.1.1 (CLI-first gap surfacing)
 
-Each classification must be:
-- Explainable
-- Reproducible
-- Reversible
+Phase 5.2 introduces **classification of surfaced evidence and gaps**  
+without judgment, scoring, or recommendation.
+
+This phase answers:
+
+> “What *type* of evidence is visible or missing?”  
+> not  
+> “Is this good enough?”
+
+---
+
+## 1. Purpose (Non-Negotiable)
+
+Phase 5.2 exists to:
+- Reduce cognitive load when reading gaps
+- Organize information into recognizable categories
+- Prepare *neutral inputs* for future exploration (e.g., applyAI)
+
+It must **never** evaluate, rank, or advise.
+
+---
+
+## 2. Allowed Classification Axes (Closed Set)
+
+Evidence and gaps may only be labeled using **one or more** of the following
+**non-evaluative categories**:
+
+- **Experience Evidence**  
+  (roles, responsibilities, past work described)
+
+- **Skill / Tool Mention**  
+  (languages, frameworks, platforms explicitly named)
+
+- **System / Domain Exposure**  
+  (payments, infra, ML, security, etc., as explicitly stated)
+
+- **Output / Artifact Evidence**  
+  (projects, demos, repos, docs, shipped systems)
+
+- **Scope / Level Indicator**  
+  (senior, intern, manager — *only if explicitly written*)
+
+No other categories may be introduced in Phase 5.2.
+
+---
+
+## 3. Classification Rules (Hard Constraints)
+
+- [x] Classification is **descriptive only**
+- [x] Classification is based on **verbatim text**
+- [x] No inference across sections or lines
+- [x] No normalization or abstraction
+- [x] No combining weak signals into stronger claims
+
+Allowed phrasing:
+- “This requirement appears to be a **Skill / Tool Mention**”
+- “The resume includes **Experience Evidence** related to X”
+
+Forbidden phrasing:
+- “This demonstrates competence in…”
+- “This suggests readiness for…”
+- “This is insufficient experience”
+
+---
+
+## 4. Handling Missing Evidence
+
+When a job requirement has no matching resume evidence:
+
+- It must be labeled **only** as:
+  > “No explicit evidence found in the provided resume”
+
+- It may optionally include:
+  - The **classification type** of the requirement  
+    (e.g., Skill / Tool Mention)
+
+It must **never**:
+- Imply deficiency
+- Suggest remediation
+- Predict outcomes
+
+---
+
+## 5. Output Structure (Stable)
+
+Phase 5.2 output must preserve this structure:
+
+1. **Requirement (verbatim)**
+2. **Classification type**
+3. **Resume evidence (quoted)** *or* “Not visible”
+
+No scores.  
+No percentages.  
+No ordering by importance.
+
+---
+
+## 6. Language Guardrails (Strict)
+
+The system must not use:
+
+- “gap” (use “not visible” instead)
+- “missing skill”
+- “lacking”
+- “needs”
+- “should”
+
+Approved neutral terms:
+- “appears”
+- “is mentioned”
+- “is not present”
+- “is classified as”
+
+---
+
+## 7. User Agency Invariants
+
+- [x] User explicitly requests classification
+- [x] User can opt out at any time
+- [x] No classification persists beyond the run
+- [x] Resume and job text are not stored
+- [x] No cross-job aggregation
+
+---
+
+## 8. Relationship to applyAI (Boundary Lock)
+
+Phase 5.2 outputs may be **passed forward** as inputs to applyAI *only if*:
+
+- They remain neutral descriptors
+- They are treated as **exploration prompts**
+- They are never reframed as “deficits”
+
+applyAI must:
+- Ask before generating projects
+- Avoid identity claims
+- Avoid prescriptive paths
+
+---
+
+## 9. Explicitly Out of Scope (Phase 5.2)
+
+Phase 5.2 must not include:
+
+- Scoring or weighting
+- ATS simulation
+- Fit assessment
+- Hiring likelihood
+- Resume rewriting
+- Recommendations
+
+---
+
+## 10. LLM Constraint
+
+If an LLM is used in Phase 5.2:
+
+- It may only:
+  - Extract
+  - Classify
+  - Quote
+
+- It must not:
+  - Interpret intent
+  - Predict ability
+  - Generalize beyond text
+
+**Violation of these constraints invalidates Phase 5.2.**
+
+---
+
+## Design Principle Reminder
+
+> **Classification organizes information.**  
+> **It does not judge it.**  
+> **Understanding belongs to the user.**
+
 
 ---
 

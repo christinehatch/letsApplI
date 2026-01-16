@@ -13,17 +13,17 @@ This checklist defines **what Phase 5 is allowed to do, what it must never do, a
 ## 1. Entry Conditions (Must Be True)
 
 - [x] Phase 4 is complete and locked
-- [ ] Job listings are surfaced without recommendations or scoring
-- [ ] User explicitly selects a single job to explore
-- [ ] User explicitly provides resume or evidence (paste or file)
-- [ ] No automatic processing occurs without user initiation
+- [x] Job listings are surfaced without recommendations or scoring
+- [x] User explicitly selects a single job to explore
+- [x] User explicitly provides resume or evidence (paste or file)
+- [x] No automatic processing occurs without user initiation
 
 ---
 
 ## 2. Allowed Inputs
 
-- [ ] A single job posting chosen by the user
-- [ ] User-provided resume text or document
+- [x] A single job posting chosen by the user
+- [x] User-provided resume text or document
 - [ ] Optional user context (e.g., “I’m curious about this role”)
 
 ❌ Not allowed:
@@ -36,13 +36,13 @@ This checklist defines **what Phase 5 is allowed to do, what it must never do, a
 
 ## 3. Processing Rules (Hard Constraints)
 
-- [ ] Compare **explicit job requirements ↔ explicit resume evidence**
-- [ ] Identify:
+- [x] Compare **explicit job requirements ↔ explicit resume evidence**
+- [x] Identify:
   - Clear overlaps (mentioned in both)
   - Clear absences (mentioned in job, not present in resume)
-- [ ] Do **not** infer skills, intent, seniority, or potential
-- [ ] Do **not** normalize, score, rank, or weight requirements
-- [ ] Do **not** guess what the user “meant” or “likely has”
+- [x] Do **not** infer skills, intent, seniority, or potential
+- [x] Do **not** normalize, score, rank, or weight requirements
+- [x] Do **not** guess what the user “meant” or “likely has”
 
 Allowed verbs:
 - “mentions”
@@ -63,10 +63,10 @@ Disallowed verbs:
 
 All output must be:
 
-- [ ] Neutral
-- [ ] Descriptive
-- [ ] Non-evaluative
-- [ ] Reversible (no lasting conclusions)
+- [x] Neutral
+- [x] Descriptive
+- [x] Non-evaluative
+- [x] Reversible (no lasting conclusions)
 
 Required framing examples:
 - “This role mentions X; your resume includes Y.”
@@ -81,22 +81,21 @@ Forbidden framing:
 
 ## 5. User Agency & Control
 
-- [ ] User initiates every comparison
-- [ ] User can stop or dismiss at any point
-- [ ] No automatic follow-up actions
-- [ ] No hidden state or memory creation
-- [ ] No persistence of resume content after session ends
+- [x] User initiates every comparison
+- [x] User can stop or dismiss at any point
+- [x] No automatic follow-up actions
+- [x] No hidden state or memory creation
+- [x] No persistence of resume content after session ends
 
 ---
 
 ## 6. applyAI Integration Boundary
 
-- [ ] Phase 5 may surface **optional evidence gaps**
-- [ ] Gaps may be offered as **inputs** to applyAI
-- [ ] applyAI must:
-  - Treat gaps as *exploration prompts*, not deficits
-  - Never generate identity claims (“you are X”)
-  - Never imply hiring outcomes
+- [x] Phase 5 may surface **optional evidence gaps**
+- [x] Gaps may be offered as **inputs** to applyAI
+- [x] applyAI must treat gaps as *exploration prompts*, not deficits
+- [x] applyAI must never generate identity claims (“you are X”)
+- [x] applyAI must never imply hiring outcomes
 
 Phase 5 does **not**:
 - Generate projects automatically
@@ -109,12 +108,12 @@ Phase 5 does **not**:
 
 Phase 5 must **not** include:
 
-- [ ] Resume scoring or ATS optimization
-- [ ] Fit percentages or rankings
-- [ ] Career advice or recommendations
-- [ ] Hiring likelihood predictions
-- [ ] Behavioral or personality inference
-- [ ] Long-term memory creation
+- [x] Resume scoring or ATS optimization
+- [x] Fit percentages or rankings
+- [x] Career advice or recommendations
+- [x] Hiring likelihood predictions
+- [x] Behavioral or personality inference
+- [x] Long-term memory creation
 
 ---
 
@@ -122,11 +121,10 @@ Phase 5 must **not** include:
 
 Phase 5 can be considered complete when:
 
-- [ ] Checklist invariants are met
-- [ ] User can explore a job → evidence comparison safely
-- [ ] No automation or judgment is introduced
-- [ ] applyAI integration remains optional and user-driven
-- [ ] All outputs preserve human agency
+- [x] Single job ↔ single resume comparison
+- [x] Explicit text-only comparison
+- [x] Read-only analysis
+- [x] Markdown output
 
 ---
 
@@ -138,24 +136,13 @@ Phase 5 can be considered complete when:
 
 ---
 
-## 9. Phase 5.1 — Guided Job → Evidence Gap Surfacing (Spec Only)
-
-**Goal:**  
-Allow a user to explore *what a job posting explicitly asks for* versus *what their provided evidence explicitly shows*.
-
-This phase introduces **visibility**, not assessment.
-
-No code beyond controlled parsing and formatting is permitted.
-
----
-
-## 10. Phase 5.1.1 — Interface Constraint (Design Lock)
+## 9. Phase 5.1.1 — Interface Constraint (Design Lock)
 
 **Initial implementation is CLI-first.**
 
-- [x] User pastes a job posting (text or URL → text)
-- [x] User pastes resume or evidence text
-- [x] System outputs a single, human-readable Markdown report
+- [x] User supplies job text (paste or file)
+- [x] User supplies resume text (paste or file)
+- [x] Output is a single Markdown report
 - [x] No UI, browser automation, or background processing
 - [x] No persistence of job or resume content
 
@@ -164,22 +151,40 @@ This constraint exists to:
 - Enable fast iteration
 - Avoid premature UI or plugin coupling
 
-This does **not** define the long-term interface.
 Future interfaces (UI, plugin, chat-based) must preserve
 all Phase 5 invariants before being considered.
 
 ---
 
-## 11. Phase 5.1.1 — Evidence Highlighting (COMPLETE)
+## 10. Phase 5.1.1 — Evidence Highlighting (COMPLETE)
 
 - [x] CLI-first flow remains unchanged
 - [x] Explicit requirement → resume line matching only
 - [x] No inference or paraphrasing
 - [x] Evidence shown via quoted resume lines
-- [x] Missing evidence clearly labeled as “not visible”
+- [x] Missing evidence labeled as “not visible”
 - [x] Neutral, observational copy enforced
 - [x] Output rendered as human-readable Markdown
 - [x] No scoring, ranking, or recommendations introduced
 
 **Invariant:**  
 This phase surfaces *visibility*, not capability.
+
+---
+
+## 11. Phase 5 Completion Criteria (Overall)
+
+Phase 5 may advance to LLM-assisted steps **only after**:
+
+- [ ] Phase 5.2 evidence classification is design-locked
+- [ ] Phase 5.3 language guardrails are specified
+- [ ] All outputs remain reversible and user-controlled
+- [ ] No automated conclusions are introduced
+
+---
+
+## Design Principle Reminder
+
+> **Phase 5 surfaces information, not conclusions.**  
+> **It enables reflection, not decisions.**  
+> **People remain the authority.**
