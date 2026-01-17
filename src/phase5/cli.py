@@ -13,6 +13,7 @@ from pathlib import Path
 from phase5.extract_requirements import extract_requirements
 from phase5.match_evidence import match_evidence
 from phase5.render_gap_summary import render_gap_summary
+from phase5.mock_proposals import get_mock_proposals
 
 def load_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -30,9 +31,37 @@ def run_gap(args):
 
 
 def run_proposals(args):
-    print("\n--- AI Proposals (optional) ---")
-    print("No proposals available.")
-    print("\n(This system does not generate or apply AI output by default.)")
+    proposals = get_mock_proposals()
+
+    if not proposals:
+        print("\n--- AI Proposals (optional) ---")
+        print("No proposals available.")
+        print("\n(This system does not generate or apply AI output by default.)")
+        return
+
+    # If no subcommand: list proposals
+    if args.action is None:
+        print("\n--- AI Proposals (optional) ---")
+        for i, p in enumerate(proposals, start=1):
+            print(f"[{i}] {p.context} ({p.status})")
+        return
+
+    # Handle: proposals show <id>
+    if args.action == "show":
+        index = args.proposal_id - 1
+        if index < 0 or index >= len(proposals):
+            print("Invalid proposal id.")
+            return
+
+        p = proposals[index]
+
+        print("\n⚠️  AI-generated content (not authoritative)")
+        print(f"Context: {p.context}")
+        print(f"Generated at: {p.generated_at}")
+        print("\n--------------------------------")
+        print(p.text)
+        print("--------------------------------")
+        return
 
 
 def main():
@@ -56,6 +85,19 @@ def main():
         "proposals",
         help="List optional AI proposals (requires explicit opt-in)"
     )
+
+    proposals_subparsers = proposals_parser.add_subparsers(dest="action")
+
+    show_parser = proposals_subparsers.add_parser(
+        "show",
+        help="Show an AI proposal by id (read-only)"
+    )
+    show_parser.add_argument(
+        "proposal_id",
+        type=int,
+        help="Proposal id to show"
+    )
+
     proposals_parser.set_defaults(func=run_proposals)
 
     # --- backward compatibility ---
