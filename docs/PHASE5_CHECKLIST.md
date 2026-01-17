@@ -185,7 +185,7 @@ Code: Not yet written
 Phase 5 may advance to LLM-assisted steps **only after**:
 
 - [x] Phase 5.2 evidence classification is design-locked
-- [ ] Phase 5.3 language guardrails are specified
+- [x] Phase 5.3 language guardrails are specified
 - [ ] All outputs remain reversible and user-controlled
 - [ ] No automated conclusions are introduced
 
