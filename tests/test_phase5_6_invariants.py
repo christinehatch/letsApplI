@@ -57,3 +57,22 @@ def test_reject_has_no_side_effects():
     assert "Applied" not in result.stdout
 
 
+def test_approval_does_not_persist_across_runs():
+    """
+    Invariant: approving a proposal in one CLI invocation
+    does not allow apply in a subsequent invocation.
+    """
+
+    # First run: accept proposal (no apply)
+    result1 = run_cli(["proposals", "accept", "1"])
+    assert "Proposal accepted" in result1.stdout
+
+    # Second run: attempt to apply without approval in this session
+    result2 = run_cli(["proposals", "edit", "1", "--output", "out.txt"])
+
+    # No file should be created
+    assert not Path("out.txt").exists()
+
+    # No applied output should appear
+    assert "Applied" not in result2.stdout
+
