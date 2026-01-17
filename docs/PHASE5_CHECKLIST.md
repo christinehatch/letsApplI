@@ -241,6 +241,72 @@ Status: 🔒 Design locked (no code)
 
 Next eligible phase: **Phase 5.6 — Human Approval & Escalation Gate**
 
+---
+
+## Phase 5.6 — Human Approval Gate (Design Locked)
+
+[ ] Deterministic output is always generated and shown **before** any AI-generated content  
+[ ] AI-generated content is clearly labeled as such and never presented as authoritative  
+[ ] AI output is surfaced only as **explicit proposals**, never auto-applied  
+
+### Proposal Object & State Model
+
+[ ] Every AI-generated suggestion is wrapped in a **Proposal object**  
+[ ] Proposal object includes, at minimum:
+  - `proposal_id` (unique per proposal instance)
+  - `source` (must be `"llm"`)
+  - `context` (descriptive reason for proposal existence)
+  - `generated_at` timestamp (audit/debug only)
+  - `status`
+  - `content.text` (exact AI-generated text)
+
+[ ] Proposal may exist in **exactly one** state:
+  - `pending`
+  - `accepted`
+  - `edited`
+  - `rejected`
+
+[ ] No proposal may skip `pending`  
+[ ] No proposal may auto-transition  
+[ ] Acceptance does not imply correctness  
+[ ] Rejection does not imply error  
+
+### Approval Semantics
+
+[ ] User must explicitly choose one of:
+  - Accept (use proposal verbatim as user-authored content)
+  - Edit (edited result becomes user-authored; original proposal discarded)
+  - Reject (proposal discarded with no downstream effect)
+
+[ ] No inference is made from acceptance, editing, or rejection  
+[ ] No preference, skill level, or intent is inferred from user choice  
+
+### Persistence & Learning Constraints (Hard)
+
+[ ] Proposal objects are **ephemeral only**
+[ ] Proposals may exist only in-session or local transient state  
+[ ] No proposal is stored after the interaction ends  
+[ ] No proposal outcome is reused, replayed, or learned from  
+[ ] No aggregation of approvals or rejections is permitted  
+[ ] Deleting local state fully resets the system  
+
+### Apply Semantics
+
+[ ] “Apply” means copying text into a **user-controlled output** (file/stdout buffer)  
+[ ] The system never sends, submits, or applies content on the user’s behalf  
+
+### Explicit Non-Goals (Reaffirmed)
+
+[ ] No resume scoring  
+[ ] No suitability judgments  
+[ ] No career advice  
+[ ] No automated application steps  
+[ ] No long-term memory or personalization  
+
+Any expansion of state, persistence, inference, or automation requires:
+[ ] A new phase  
+[ ] A new written spec  
+[ ] Explicit design lock before implementation
 
 ---
 
