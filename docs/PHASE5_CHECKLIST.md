@@ -191,6 +191,16 @@ Phase 5 may advance to LLM-assisted steps **only after**:
 
 ---
 
+### Phase 5.3 — Language Guardrails (Design Lock)
+
+- [x] Allowed language patterns documented
+- [x] Disallowed language explicitly enumerated
+- [x] Artifact-anchored phrasing enforced
+- [x] No judgment / no advice / no authority claims
+- [x] Forward-looking LLM participation contract defined
+
+---
+
 ## Design Principle Reminder
 
 > **Phase 5 surfaces information, not conclusions.**  
