@@ -29,9 +29,19 @@ def run_gap(args):
 
     print(output_md)
 
+def _apply_output(text, output_path):
+    if output_path:
+        Path(output_path).write_text(text, encoding="utf-8")
+        print(f"\n✓ Applied to file: {output_path}")
+    else:
+        print("\n--- Applied Output (user-controlled) ---")
+        print(text)
+        print("----------------------------------------")
+
 
 def run_proposals(args):
     proposals = get_mock_proposals()
+    approved_text = None
 
     if not proposals:
         print("\n--- AI Proposals (optional) ---")
@@ -65,11 +75,16 @@ def run_proposals(args):
 
     # Accept proposal
     if args.action == "accept":
+        approved_text = p.text
         p.status = "accepted"
         print("\n✓ Proposal accepted (ephemeral)")
-        print("\n--- User-authored content ---")
-        print(p.text)
-        print("-----------------------------")
+
+        if args.apply:
+            _apply_output(approved_text, args.output)
+        else:
+            print("\n--- User-authored content ---")
+            print(approved_text)
+            print("-----------------------------")
         return
 
     # Edit proposal
@@ -77,16 +92,19 @@ def run_proposals(args):
         print("\nEnter your edited version below.")
         print("Finish with Ctrl+D (Unix) or Ctrl+Z + Enter (Windows):\n")
 
-        try:
-            edited_text = input()
-        except EOFError:
-            edited_text = ""
+        import sys
+        edited_text = sys.stdin.read().strip()
 
+        approved_text = edited_text
         p.status = "edited"
         print("\n✓ Proposal edited and accepted (ephemeral)")
-        print("\n--- User-authored content ---")
-        print(edited_text)
-        print("-----------------------------")
+
+        if args.apply:
+            _apply_output(approved_text, args.output)
+        else:
+            print("\n--- User-authored content ---")
+            print(approved_text)
+            print("-----------------------------")
         return
 
     # Reject proposal
@@ -95,6 +113,7 @@ def run_proposals(args):
         print("\n✗ Proposal rejected.")
         print("(No changes were applied.)")
         return
+
 
 
 def main():
@@ -120,33 +139,26 @@ def main():
     )
 
     proposals_subparsers = proposals_parser.add_subparsers(dest="action")
-    accept_parser = proposals_subparsers.add_parser(
-        "accept",
-        help="Accept an AI proposal as-is (ephemeral)"
-    )
+
+    # show
+    show_parser = proposals_subparsers.add_parser("show", help="Show an AI proposal by id (read-only)")
+    show_parser.add_argument("proposal_id", type=int, help="Proposal id to show")
+
+    # accept
+    accept_parser = proposals_subparsers.add_parser("accept", help="Accept an AI proposal as-is (ephemeral)")
     accept_parser.add_argument("proposal_id", type=int)
+    accept_parser.add_argument("--apply", action="store_true", help="Immediately apply accepted content")
+    accept_parser.add_argument("--output", help="Optional file path for applied output")
 
-    edit_parser = proposals_subparsers.add_parser(
-        "edit",
-        help="Edit an AI proposal before accepting (ephemeral)"
-    )
+    # edit
+    edit_parser = proposals_subparsers.add_parser("edit", help="Edit an AI proposal before accepting (ephemeral)")
     edit_parser.add_argument("proposal_id", type=int)
+    edit_parser.add_argument("--apply", action="store_true", help="Immediately apply edited content")
+    edit_parser.add_argument("--output", help="Optional file path for applied output")
 
-    reject_parser = proposals_subparsers.add_parser(
-        "reject",
-        help="Reject an AI proposal (ephemeral)"
-    )
+    # reject
+    reject_parser = proposals_subparsers.add_parser("reject", help="Reject an AI proposal (ephemeral)")
     reject_parser.add_argument("proposal_id", type=int)
-
-    show_parser = proposals_subparsers.add_parser(
-        "show",
-        help="Show an AI proposal by id (read-only)"
-    )
-    show_parser.add_argument(
-        "proposal_id",
-        type=int,
-        help="Proposal id to show"
-    )
 
     proposals_parser.set_defaults(func=run_proposals)
 
