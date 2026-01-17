@@ -39,28 +39,61 @@ def run_proposals(args):
         print("\n(This system does not generate or apply AI output by default.)")
         return
 
-    # If no subcommand: list proposals
+    # List proposals
     if args.action is None:
         print("\n--- AI Proposals (optional) ---")
         for i, p in enumerate(proposals, start=1):
             print(f"[{i}] {p.context} ({p.status})")
         return
 
-    # Handle: proposals show <id>
+    index = args.proposal_id - 1
+    if index < 0 or index >= len(proposals):
+        print("Invalid proposal id.")
+        return
+
+    p = proposals[index]
+
+    # Show proposal
     if args.action == "show":
-        index = args.proposal_id - 1
-        if index < 0 or index >= len(proposals):
-            print("Invalid proposal id.")
-            return
-
-        p = proposals[index]
-
         print("\n⚠️  AI-generated content (not authoritative)")
         print(f"Context: {p.context}")
         print(f"Generated at: {p.generated_at}")
         print("\n--------------------------------")
         print(p.text)
         print("--------------------------------")
+        return
+
+    # Accept proposal
+    if args.action == "accept":
+        p.status = "accepted"
+        print("\n✓ Proposal accepted (ephemeral)")
+        print("\n--- User-authored content ---")
+        print(p.text)
+        print("-----------------------------")
+        return
+
+    # Edit proposal
+    if args.action == "edit":
+        print("\nEnter your edited version below.")
+        print("Finish with Ctrl+D (Unix) or Ctrl+Z + Enter (Windows):\n")
+
+        try:
+            edited_text = input()
+        except EOFError:
+            edited_text = ""
+
+        p.status = "edited"
+        print("\n✓ Proposal edited and accepted (ephemeral)")
+        print("\n--- User-authored content ---")
+        print(edited_text)
+        print("-----------------------------")
+        return
+
+    # Reject proposal
+    if args.action == "reject":
+        p.status = "rejected"
+        print("\n✗ Proposal rejected.")
+        print("(No changes were applied.)")
         return
 
 
@@ -87,6 +120,23 @@ def main():
     )
 
     proposals_subparsers = proposals_parser.add_subparsers(dest="action")
+    accept_parser = proposals_subparsers.add_parser(
+        "accept",
+        help="Accept an AI proposal as-is (ephemeral)"
+    )
+    accept_parser.add_argument("proposal_id", type=int)
+
+    edit_parser = proposals_subparsers.add_parser(
+        "edit",
+        help="Edit an AI proposal before accepting (ephemeral)"
+    )
+    edit_parser.add_argument("proposal_id", type=int)
+
+    reject_parser = proposals_subparsers.add_parser(
+        "reject",
+        help="Reject an AI proposal (ephemeral)"
+    )
+    reject_parser.add_argument("proposal_id", type=int)
 
     show_parser = proposals_subparsers.add_parser(
         "show",
