@@ -201,6 +201,49 @@ Phase 5 may advance to LLM-assisted steps **only after**:
 
 ---
 
+## Phase 5.5 — LLM Shadow Mode (Design Locked)
+
+Purpose:  
+Allow LLMs to participate **invisibly** for evaluation and comparison, without influencing user-visible behavior or system state.
+
+- [x] Define Shadow Mode as non-user-visible
+- [x] LLM output must never override deterministic output
+- [x] No persistence of LLM output
+- [x] No personalization or inference
+- [x] All behavior gated behind prior Phase 5 invariants
+- [x] Explicitly prohibit recommendations, judgments, or predictions
+
+Status: 🔒 Design locked (no code)
+
+---
+
+## Phase 5.5.1 — Prompt Test Harness (Design Locked)
+
+Purpose:  
+Treat prompts as testable artifacts and prevent silent drift before any LLM output reaches users.
+
+- [x] Define deterministic output as the source of truth
+- [x] Require explicit prompt templates (versioned, static text)
+- [x] Specify guardrail constraints evaluated outside the model
+- [x] Compare LLM output against deterministic baseline
+- [x] Categorize results (aligned / divergent / violation)
+- [x] Discard outputs that violate guardrails
+- [x] Prohibit automatic promotion of prompt changes
+
+Status: 🔒 Design locked (no code)
+
+---
+
+### Phase 5 Boundary Reminder
+
+> No LLM output may be user-visible, persisted, or action-driving
+> until **explicit human approval gates** are introduced.
+
+Next eligible phase: **Phase 5.6 — Human Approval & Escalation Gate**
+
+
+---
+
 ## Design Principle Reminder
 
 > **Phase 5 surfaces information, not conclusions.**  
