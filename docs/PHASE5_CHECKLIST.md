@@ -4,7 +4,12 @@
 **Scope:** Read-only, user-initiated analysis  
 **Non-goal:** Automation, scoring, or judgment
 
-Phase 5 introduces **guided comparison between a job posting and a user’s existing evidence (e.g., resume)** while preserving user agency, neutrality, and reversibility.
+Phase 5 includes multiple sub-phases.
+
+Early sub-phases (5.1–5.4) are strictly read-only.
+Later sub-phases (5.6+) may introduce **user-authored artifacts**
+generated via explicit human approval, while still prohibiting
+automation, scoring, inference, or decision-making.
 
 This checklist defines **what Phase 5 is allowed to do, what it must never do, and the invariants that must hold before any code is written.**
 
@@ -245,14 +250,14 @@ Next eligible phase: **Phase 5.6 — Human Approval & Escalation Gate**
 
 ## Phase 5.6 — Human Approval Gate (Design Locked)
 
-[ ] Deterministic output is always generated and shown **before** any AI-generated content  
-[ ] AI-generated content is clearly labeled as such and never presented as authoritative  
-[ ] AI output is surfaced only as **explicit proposals**, never auto-applied  
+[x] Deterministic output is always generated and shown **before** any AI-generated content  
+[x] AI-generated content is clearly labeled as such and never presented as authoritative  
+[x] AI output is surfaced only as **explicit proposals**, never auto-applied  
 
 ### Proposal Object & State Model
 
-[ ] Every AI-generated suggestion is wrapped in a **Proposal object**  
-[ ] Proposal object includes, at minimum:
+[x] Every AI-generated suggestion is wrapped in a **Proposal object**  
+[x] Proposal object includes, at minimum:
   - `proposal_id` (unique per proposal instance)
   - `source` (must be `"llm"`)
   - `context` (descriptive reason for proposal existence)
@@ -260,55 +265,162 @@ Next eligible phase: **Phase 5.6 — Human Approval & Escalation Gate**
   - `status`
   - `content.text` (exact AI-generated text)
 
-[ ] Proposal may exist in **exactly one** state:
+[x] Proposal may exist in **exactly one** state:
   - `pending`
   - `accepted`
   - `edited`
   - `rejected`
 
-[ ] No proposal may skip `pending`  
-[ ] No proposal may auto-transition  
-[ ] Acceptance does not imply correctness  
-[ ] Rejection does not imply error  
+[x] No proposal may skip `pending`  
+[x] No proposal may auto-transition  
+[x] Acceptance does not imply correctness  
+[x] Rejection does not imply error  
 
 ### Approval Semantics
 
-[ ] User must explicitly choose one of:
+[x] User must explicitly choose one of:
   - Accept (use proposal verbatim as user-authored content)
   - Edit (edited result becomes user-authored; original proposal discarded)
   - Reject (proposal discarded with no downstream effect)
 
-[ ] No inference is made from acceptance, editing, or rejection  
-[ ] No preference, skill level, or intent is inferred from user choice  
+[x] No inference is made from acceptance, editing, or rejection  
+[x] No preference, skill level, or intent is inferred from user choice  
 
 ### Persistence & Learning Constraints (Hard)
 
-[ ] Proposal objects are **ephemeral only**
-[ ] Proposals may exist only in-session or local transient state  
-[ ] No proposal is stored after the interaction ends  
-[ ] No proposal outcome is reused, replayed, or learned from  
-[ ] No aggregation of approvals or rejections is permitted  
-[ ] Deleting local state fully resets the system  
+[x] Proposal objects are **ephemeral only**
+[x] Proposals may exist only in-session or local transient state  
+[x] No proposal is stored after the interaction ends  
+[x] No proposal outcome is reused, replayed, or learned from  
+[x] No aggregation of approvals or rejections is permitted  
+[x] Deleting local state fully resets the system  
 
 ### Apply Semantics
 
-[ ] “Apply” means copying text into a **user-controlled output** (file/stdout buffer)  
-[ ] The system never sends, submits, or applies content on the user’s behalf  
+[x] “Apply” means copying text into a **user-controlled output** (file/stdout buffer)  
+[x] The system never sends, submits, or applies content on the user’s behalf  
 
 ### Explicit Non-Goals (Reaffirmed)
 
-[ ] No resume scoring  
-[ ] No suitability judgments  
-[ ] No career advice  
-[ ] No automated application steps  
-[ ] No long-term memory or personalization  
+[x] No resume scoring  
+[x] No suitability judgments  
+[x] No career advice  
+[x] No automated application steps  
+[x] No long-term memory or personalization  
 
 Any expansion of state, persistence, inference, or automation requires:
-[ ] A new phase  
-[ ] A new written spec  
-[ ] Explicit design lock before implementation
+[x] A new phase  
+[x] A new written spec  
+[x] Explicit design lock before implementation
+
 
 ---
+## Phase 5.7 — Controlled Proposal Generation (**DESIGN LOCKED**)
+
+
+Purpose:
+Allow AI-generated proposals to be created **only after**
+deterministic analysis and **only upon explicit user request**.
+
+Constraints:
+- Generation is optional and non-authoritative
+- All proposals enter Phase 5.6 in `pending` state
+- No persistence, learning, or personalization
+- No recommendations or suitability judgments
+
+See: PHASE5_7_CONTROLLED_PROPOSAL_GENERATION.md
+See: PHASE5_7_CHECKLIST.md
+
+---
+
+## Phase 5.7 — Controlled Proposal Generation (Design Locked)
+
+**Purpose**
+
+Introduce AI-generated proposals **only under explicit human request**, while preserving all Phase 5 guarantees:
+- deterministic-first output
+- no authority transfer
+- no persistence or learning
+- no automation or inference
+
+This phase governs **proposal generation only**.  
+Approval, editing, rejection, and application remain governed by **Phase 5.6**.
+
+---
+
+### Allowed Capabilities
+
+[ ] AI proposals may be generated **only after** deterministic analysis completes  
+[ ] Proposal generation requires **explicit user request**  
+[ ] Generation context must be explicitly declared  
+[ ] AI output is optional, descriptive, and non-authoritative  
+[ ] All proposals enter Phase 5.6 in `pending` state  
+
+---
+
+### Explicit Constraints
+
+[ ] No automatic or background proposal generation  
+[ ] No generation without deterministic output  
+[ ] No proposal bypasses the Phase 5.6 approval gate  
+[ ] No resume scoring, ranking, or suitability judgments  
+[ ] No “you should apply” or outcome-predictive language  
+
+---
+
+### Ephemerality & Memory Rules
+
+[ ] Generated proposals are ephemeral  
+[ ] No proposal text or metadata is persisted beyond the interaction  
+[ ] No aggregation or learning from accept/edit/reject outcomes  
+[ ] No personalization or behavioral inference  
+
+---
+
+### Failure Conditions
+
+[ ] Generation aborts if deterministic analysis fails  
+[ ] Generation aborts if guardrail validation fails  
+[ ] No partial AI output is shown on failure  
+[ ] No proposal object is created on abort  
+
+---
+
+### References
+
+- `PHASE5_7_CONTROLLED_PROPOSAL_GENERATION.md`
+- `PHASE5_7_CHECKLIST.md`
+
+---
+
+**Design Lock**
+
+Phase 5.7 introduces **generation capability only**.
+
+Any expansion involving:
+- persistence
+- personalization
+- automation
+- inference
+- ranking
+
+requires a **new phase and explicit charter**.
+
+**Design Lock Declaration**
+
+Phase 5.7 is design-locked.
+
+No implementation, refactor, or extension of proposal generation
+is permitted without:
+- a new phase specification
+- explicit scope definition
+- and a revised checklist
+
+Any deviation invalidates Phase 5.7 guarantees.
+
+
+---
+
 
 ## Design Principle Reminder
 

@@ -19,3 +19,5 @@ state/seen_jobs.json
 job.txt
 resume.txt
 
+#output files 
+applied.txt

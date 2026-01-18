@@ -131,6 +131,9 @@ Reduce cognitive load **after** jobs are surfaced, without automating decisions.
 **Completion criteria:**  
 Further work would require a new charter and a new name.
 
+Phase 5.7 is design-locked at the specification level.
+No code implementing proposal generation exists yet.
+
 ---
 
 ## Current Status
@@ -141,6 +144,7 @@ Further work would require a new charter and a new name.
 - Phase 3: ✅ Complete
 - Phase 4: ✅ Complete
 - Phase 5: 🚧 Planned, not committed
+
 
 This project is considered **demo-complete after Phase 1**.
 
