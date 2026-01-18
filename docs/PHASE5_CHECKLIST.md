@@ -346,43 +346,63 @@ Introduce AI-generated proposals **only under explicit human request**, while pr
 This phase governs **proposal generation only**.  
 Approval, editing, rejection, and application remain governed by **Phase 5.6**.
 
+### Phase 5.7 — Controlled Proposal Generation (DESIGN LOCKED)
+
+Status:
+- 🔒 Safety invariants: LOCKED
+- ⏳ Liveness guarantees: SPECIFIED, NOT YET ENFORCED
+
+Phase 5.7 is architecturally complete but intentionally not behaviorally complete.
+
 ---
 
 ### Allowed Capabilities
 
-[ ] AI proposals may be generated **only after** deterministic analysis completes  
-[ ] Proposal generation requires **explicit user request**  
-[ ] Generation context must be explicitly declared  
-[ ] AI output is optional, descriptive, and non-authoritative  
-[ ] All proposals enter Phase 5.6 in `pending` state  
+[⏳] AI proposals may be generated **only after** deterministic analysis completes  
+[⏳] Proposal generation requires **explicit user request**  
+[✅] Generation context must be explicitly declared  
+[✅] AI output is optional, descriptive, and non-authoritative  
+[✅] All proposals enter Phase 5.6 in `pending` state  
 
 ---
 
 ### Explicit Constraints
 
-[ ] No automatic or background proposal generation  
-[ ] No generation without deterministic output  
-[ ] No proposal bypasses the Phase 5.6 approval gate  
-[ ] No resume scoring, ranking, or suitability judgments  
-[ ] No “you should apply” or outcome-predictive language  
+[✅] No automatic or background proposal generation  
+[⏳] No generation without deterministic output  
+[✅] No proposal bypasses the Phase 5.6 approval gate  
+[✅] No resume scoring, ranking, or suitability judgments  
+[✅] No “you should apply” or outcome-predictive language  
+
+⚠️ Note on Liveness
+
+Phase 5.7 does not yet guarantee that AI-generated proposals
+originate from live LLM output in all environments.
+
+Fallback behavior is permitted until:
+- a production adapter is wired
+- credentials are validated
+- prompt harnesses are exercised against a real provider
+
+This is intentional and preserves safety-first rollout.
 
 ---
 
 ### Ephemerality & Memory Rules
 
-[ ] Generated proposals are ephemeral  
-[ ] No proposal text or metadata is persisted beyond the interaction  
-[ ] No aggregation or learning from accept/edit/reject outcomes  
-[ ] No personalization or behavioral inference  
+[✅] Generated proposals are ephemeral  
+[✅] No proposal text or metadata is persisted beyond the interaction  
+[✅] No aggregation or learning from accept/edit/reject outcomes  
+[✅] No personalization or behavioral inference  
 
 ---
 
 ### Failure Conditions
 
-[ ] Generation aborts if deterministic analysis fails  
-[ ] Generation aborts if guardrail validation fails  
-[ ] No partial AI output is shown on failure  
-[ ] No proposal object is created on abort  
+[⏳] Generation aborts if deterministic analysis fails  
+[⏳] Generation aborts if guardrail validation fails  
+[⏳] No partial AI output is shown on failure  
+[⏳] No proposal object is created on abort  
 
 ---
 

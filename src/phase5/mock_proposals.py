@@ -5,7 +5,7 @@ from llm.adapter import LLMAdapter
 
 
 FALLBACK_TEXT = "This is an example AI-generated phrasing suggestion."
-TEST_SHADOW_OUTPUT = os.getenv("LLM_SHADOW_TEST_OUTPUT")
+
 
 def get_mock_proposals():
     """
@@ -22,23 +22,39 @@ def get_mock_proposals():
     if os.getenv("USE_LLM_SHADOW_MODE") == "1":
         try:
             # 🧪 Test-only override (cross-process safe)
-            if TEST_SHADOW_OUTPUT:
-                generated = TEST_SHADOW_OUTPUT
+            test_override = os.getenv("LLM_SHADOW_TEST_OUTPUT")
+
+            if test_override:
+                generated = test_override
             else:
+                source_text = (
+                    "Implemented a small Python project using data structures."
+                )
+
+                prompt = (
+                    "Rewrite the following resume bullet using neutral, non-authoritative language.\n\n"
+                    f"Original text:\n{source_text}\n\n"
+                    "Constraints:\n"
+                    "- Do not add facts\n"
+                    "- Do not infer skill level or seniority\n"
+                    "- Do not recommend actions\n"
+                    "- Return only the rewritten text"
+                )
+
                 adapter = LLMAdapter()
                 generated = adapter.generate(
-                    prompt=(
-                        "Generate a neutral phrasing variant for an existing resume bullet. "
-                        "Do not add facts. Do not make recommendations."
-                    ),
+                    prompt=prompt,
                     context="phrasing_variant",
                     temperature=0.0,
                 )
 
+
+            # 🔑 Phase 5.7 liveness gate
             if generated and generated.strip():
                 text = generated.strip()
 
-        except Exception:
+        except Exception as e:
+            # Shadow-mode failures must never affect behavior
             pass
 
     return [

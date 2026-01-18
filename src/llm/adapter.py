@@ -1,48 +1,76 @@
-# src/llm/adapter.py
-
-from typing import Optional
+import os
+from openai import OpenAI
 
 
 class LLMAdapterError(Exception):
-    """Raised when the LLM adapter fails in a non-recoverable way."""
+    pass
 
 
 class LLMAdapter:
     """
-    Minimal, non-authoritative LLM adapter (Phase 5.7).
+    Phase 5.7 LLM Adapter (Shadow Mode)
 
-    This adapter:
-    - accepts a fully-formed prompt
-    - returns raw text output only
-    - performs no retries
-    - performs no logging
-    - performs no memory writes
-    - has no side effects
-
-    It is intended for shadow-mode execution only.
+    Guarantees:
+    - No persistence
+    - No retries that alter semantics
+    - No authority or recommendations
+    - Caller controls visibility and approval
     """
+
+    def __init__(self):
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise LLMAdapterError("OPENAI_API_KEY not set")
+
+        self.client = OpenAI(api_key=api_key)
 
     def generate(
         self,
-        prompt: str,
         *,
+        prompt: str,
         context: str,
         temperature: float = 0.0,
+        max_tokens: int = 200,
     ) -> str:
         """
-        Execute the prompt and return raw LLM output.
+        Generate a non-authoritative phrasing variant.
 
-        Parameters:
-            prompt (str): Fully rendered prompt text.
-            context (str): Declarative generation context
-                           (e.g. 'phrasing_variant').
-            temperature (float): Explicitly set; defaults to 0.0.
-
-        Returns:
-            str: Raw LLM output (untrusted, unvalidated).
-
-        Raises:
-            LLMAdapterError: If the call fails.
+        This method:
+        - Returns raw text only
+        - Makes no guarantees about usefulness
+        - Raises on hard failures
         """
-        raise NotImplementedError("LLMAdapter.generate is not implemented")
 
+        try:
+            response = self.client.responses.create(
+                model="gpt-4o-mini",
+                input=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You generate neutral, non-authoritative phrasing variants.\n"
+                            "Do not add facts.\n"
+                            "Do not make recommendations.\n"
+                            "Do not infer intent or skill.\n"
+                            "Do not evaluate correctness.\n"
+                            "Return only the rewritten text."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            )
+
+            # Extract plain text safely
+            output = response.output_text
+            if not output or not output.strip():
+                raise LLMAdapterError("Empty LLM response")
+
+            return output.strip()
+
+        except Exception as e:
+            raise LLMAdapterError(str(e)) from e

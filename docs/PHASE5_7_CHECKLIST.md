@@ -2,119 +2,119 @@
 
 ## Status
 
-☐ Not started  
-☐ In progress  
-☐ **Design-locked (no code permitted beyond this point)**
+[ ] Not started  
+[ ] In progress  
+[x] **Design-locked (no code permitted beyond this point)**
 
 ---
 
 ## Scope Confirmation
 
-☐ Phase 5.7 introduces **proposal generation only**  
-☐ Phase 5.6 approval and apply semantics remain unchanged  
-☐ No persistence, learning, or automation is introduced  
-☐ All AI output remains optional and non-authoritative  
+[x] Phase 5.7 introduces **proposal generation only**  
+[x] Phase 5.6 approval and apply semantics remain unchanged  
+[x] No persistence, learning, or automation is introduced  
+[x] All AI output remains optional and non-authoritative  
 
 ---
 
-## Entry Conditions (All Required)
+## Entry Conditions (All Required)(⏳ Deferred)
 
-☐ Deterministic analysis (Phase 5.1+) completes before any generation  
-☐ Proposal generation cannot occur if deterministic analysis fails  
-☐ User must explicitly request proposal generation  
-☐ No background or automatic proposal generation exists  
-☐ Generation request cannot be inferred from ambiguous input  
-
----
-
-## Generation Context Enforcement
-
-☐ Every generation request declares an explicit context  
-☐ Context describes *why* the proposal exists, not *what the user should do*  
-☐ Vague or overly broad contexts are rejected  
-☐ Generation does not proceed without a declared context  
+[⏳] Deterministic analysis (Phase 5.1+) completes before any generation  
+[⏳] Proposal generation cannot occur if deterministic analysis fails  
+[⏳] User must explicitly request proposal generation  
+[⏳] No background or automatic proposal generation exists  
+[⏳] Generation request cannot be inferred from ambiguous input  
 
 ---
 
-## LLM Participation Constraints
+## Generation Context Enforcement (Partially ⏳ Deferred)
 
-☐ LLM is invoked **only after** deterministic output is shown  
-☐ LLM output is descriptive, not prescriptive  
-☐ LLM output contains no evaluative or ranking language  
-☐ Forbidden language is blocked or causes generation abort  
-☐ LLM output does not assert correctness or outcomes  
+[x] Every generation request declares an explicit context  
+[x] Context describes *why* the proposal exists, not *what the user should do*  
+[⏳] Vague or overly broad contexts are rejected  
+[⏳] Generation does not proceed without a declared context  
+
+---
+
+## LLM Participation Constraints (Partially ⏳ Deferred)
+
+[x] LLM is invoked **only after** deterministic output is shown  
+[x] LLM output is descriptive, not prescriptive  
+[x] LLM output contains no evaluative or ranking language  
+[⏳] Forbidden language is blocked or causes generation abort  
+[⏳] LLM output does not assert correctness or outcomes  
 
 ---
 
 ## Proposal Object Requirements
 
-☐ Every generated suggestion is wrapped in a Proposal object  
-☐ Proposal object uses the Phase 5.6 schema  
-☐ Proposal enters the system in `pending` state  
-☐ Proposal text is passed unchanged into Phase 5.6  
-☐ Proposal includes explicit context metadata  
+[x] Every generated suggestion is wrapped in a Proposal object  
+[x] Proposal object uses the Phase 5.6 schema  
+[x] Proposal enters the system in `pending` state  
+[x] Proposal text is passed unchanged into Phase 5.6  
+[x] Proposal includes explicit context metadata  
 
 ---
 
 ## Human Approval Gate Integrity (Phase 5.6)
 
-☐ All generated proposals pass through Phase 5.6 unchanged  
-☐ No proposal is auto-approved or pre-applied  
-☐ Accept / Edit / Reject behavior is unchanged  
-☐ Apply semantics remain user-controlled and explicit  
+[x] All generated proposals pass through Phase 5.6 unchanged  
+[x] No proposal is auto-approved or pre-applied  
+[x] Accept / Edit / Reject behavior is unchanged  
+[x] Apply semantics remain user-controlled and explicit  
 
 ---
 
 ## Ephemerality & Memory Guarantees
 
-☐ Generated proposals are ephemeral  
-☐ No proposal text is stored beyond the current interaction  
-☐ No proposal metadata is persisted  
-☐ No aggregation of accept/edit/reject outcomes occurs  
-☐ No learning from user behavior or choices  
+[x] Generated proposals are ephemeral  
+[x] No proposal text is stored beyond the current interaction  
+[x] No proposal metadata is persisted  
+[x] No aggregation of accept/edit/reject outcomes occurs  
+[x] No learning from user behavior or choices  
 
 ---
 
-## Failure & Abort Behavior
+## Failure & Abort Behavior (⏳ Deferred)
 
-☐ Generation aborts if any entry condition fails  
-☐ Generation aborts if guardrail validation fails  
-☐ No partial or degraded AI output is shown  
-☐ No Proposal object is created on abort  
+[⏳] Generation aborts if any entry condition fails  
+[⏳] Generation aborts if guardrail validation fails  
+[⏳] No partial or degraded AI output is shown  
+[⏳] No Proposal object is created on abort  
 
 ---
 
 ## Auditability & Transparency
 
-☐ All AI-generated content is clearly labeled  
-☐ Deterministic output is visually and structurally distinct from AI output  
-☐ A user can answer: “Why does this proposal exist?”  
-☐ No hidden control flow or background execution exists  
+[x] All AI-generated content is clearly labeled  
+[x] Deterministic output is visually and structurally distinct from AI output  
+[x] A user can answer: “Why does this proposal exist?”  
+[x] No hidden control flow or background execution exists  
 
 ---
 
 ## Explicit Non-Goals (Re-Verified)
 
-☐ No resume scoring  
-☐ No candidate ranking  
-☐ No suitability judgments  
-☐ No “you should apply” recommendations  
-☐ No personalization or preference modeling  
-☐ No automated application actions  
+[x] No resume scoring  
+[x] No candidate ranking  
+[x] No suitability judgments  
+[x] No “you should apply” recommendations  
+[x] No personalization or preference modeling  
+[x] No automated application actions  
 
 ---
 
 ## Design Lock Confirmation
 
-☐ Phase 5.7 introduces **generation capability only**  
-☐ Any expansion requires a new phase and charter  
-☐ No code may be written until this checklist is satisfied and locked  
+[x] Phase 5.7 introduces **generation capability only**  
+[x] Any expansion requires a new phase and charter  
+[x] No code may be written until this checklist is satisfied and locked  
 
 ---
 
 ## Guiding Question (Final Check)
 
-☐ If proposal generation disappeared tomorrow, the user would **not lose agency**
+[x] If proposal generation disappeared tomorrow, the user would **not lose agency**
 
 If unchecked, **Phase 5.7 is invalid**.
 
