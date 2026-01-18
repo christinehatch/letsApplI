@@ -5,6 +5,7 @@ __pycache__/
 # IDE
 .idea/
 
+.env
 # Generated output
 DAILY_OUTPUT.md
 
