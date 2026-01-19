@@ -133,6 +133,7 @@ Further work would require a new charter and a new name.
 
 Phase 5.7 is design-locked at the specification level.
 No code implementing proposal generation exists yet.
+Adobe requires JS rendering; deterministic fetch is unavailable.
 
 ---
 
