@@ -1,12 +1,13 @@
 # src/discovery/summary.py
 from __future__ import annotations
 
-import time
 from typing import List, Dict
 from discovery.store import load_jobs
+from discovery.archetypes import match_archetype
 
 
-def summarize_since(since_ts: float) -> str:
+
+def summarize_since(since_ts: float, *, explain_roles: bool = False) -> str:
     jobs = load_jobs()
     from discovery.location_filters import is_sf_bay_area
 
@@ -34,7 +35,20 @@ def summarize_since(since_ts: float) -> str:
             loc = f" — {j.location}" if j.location else ""
             lines.append(f"- {j.title}{loc}")
             lines.append(f"  {j.url}")
+
+            # Optional archetype orientation (title-only, pre-hydration safe)
+            if explain_roles:
+                match = match_archetype(j.title)
+
+                if match.archetype != "UNKNOWN":
+                    lines.append("  ")
+                    lines.append("  What is this role generally?")
+                    lines.append("  I have not read this job.")
+                    lines.append(f"  {match.label} roles are generally associated with:")
+
+                    for line in match.orientation_lines:
+                        lines.append(f"   - {line}")
+
         lines.append("")
 
     return "\n".join(lines).strip()
-

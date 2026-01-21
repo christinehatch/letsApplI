@@ -44,11 +44,12 @@ def cmd_poll(_: argparse.Namespace) -> None:
     print("Poll complete. See state/signal_registry.json and state/discovered_jobs.json")
 
 
-def cmd_summary(_: argparse.Namespace) -> None:
+def cmd_summary(args: argparse.Namespace) -> None:
     since = load_last_run()
-    text = summarize_since(since)
+    text = summarize_since(since, explain_roles=args.explain_roles)
     print(text)
     save_last_run(time.time())
+
 
 
 def main() -> None:
@@ -72,6 +73,11 @@ def main() -> None:
     sp.set_defaults(func=cmd_poll)
 
     sp = sub.add_parser("summary")
+    sp.add_argument(
+        "--explain-roles",
+        action="store_true",
+        help="Show general role orientation based on job titles only (no job content read)",
+    )
     sp.set_defaults(func=cmd_summary)
 
     args = p.parse_args()
