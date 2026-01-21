@@ -8,7 +8,15 @@ from discovery.store import load_jobs
 
 def summarize_since(since_ts: float) -> str:
     jobs = load_jobs()
-    new_jobs = [j for j in jobs if j.first_seen_at > since_ts and j.status == "active"]
+    from discovery.location_filters import is_sf_bay_area
+
+    new_jobs = [
+        j
+        for j in jobs
+        if j.first_seen_at > since_ts
+           and j.status == "active"
+           and is_sf_bay_area(j.location)
+    ]
 
     by_company: Dict[str, List] = {}
     for j in new_jobs:
