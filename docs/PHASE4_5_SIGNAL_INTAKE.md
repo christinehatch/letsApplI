@@ -26,59 +26,60 @@ Phase 4.5 explicitly excludes:
 
 ## Entry Conditions
 
-[ ] User explicitly subscribes to:
+[🟡] User explicitly subscribes to:
 - a company
 - a domain
 - or a role category
 
-[ ] No discovery occurs without user intent
+[🟡] No discovery occurs without user intent
+🟡 Functionally met, UX not locked
 
 ---
 
 ## Allowed Inputs
 
-[ ] Sitemap files  
-[ ] Public job search APIs  
-[ ] Aggregator feeds  
-[ ] HTTP HEAD existence checks  
+[x] Sitemap files  
+[x] Public job search APIs  
+[x] Aggregator feeds  
+[x] HTTP HEAD existence checks  
 
 ---
 
 ## Prohibited Inputs
 
-[ ] JS-rendered content  
-[ ] Authenticated endpoints  
-[ ] Scraped descriptions  
-[ ] Browser automation  
+[x] JS-rendered content  
+[x] Authenticated endpoints  
+[x] Scraped descriptions  
+[x] Browser automation  
 
 ---
 
 ## Output Guarantees
 
-[ ] Jobs are recorded as **Discovered only**  
-[ ] No interpretation is attached  
-[ ] No AI involvement  
-[ ] No ranking or filtering beyond user criteria  
+[x] Jobs are recorded as **Discovered only**  
+[x] No interpretation is attached  
+[x] No AI involvement  
+[x] No ranking or filtering beyond user criteria  
 
 ---
 
 ## Failure Handling
 
-[ ] If a source blocks access → mark unavailable  
-[ ] No spoofing, retries, or circumvention  
-[ ] Failures are logged, not hidden  
+[x] If a source blocks access → mark unavailable  
+[x] No spoofing, retries, or circumvention  
+[x] Failures are logged, not hidden  
 
 ---
 
 ## User Experience
 
-[ ] User is notified of new discoveries  
-[ ] Notification includes:
+[x] User is notified of new discoveries  
+[x] Notification includes:
 - company
 - title
 - link
 
-[ ] User must explicitly request hydration
+[x] User must explicitly request hydration
 
 ---
 
@@ -105,15 +106,15 @@ If discovery fails, the system:
 - [x] First-match-wins behavior defined
 - [x] Title-only input enforced
 - [x] No probabilistic or AI-based matching
-- [ ] Matching rules implemented in code
-- [ ] Unknown titles handled explicitly
+- [x] Matching rules implemented in code
+- [x] Unknown titles handled explicitly
 
 ## UI / Output
 - [x] Archetypes are optional / expandable
 - [x] Archetypes do not appear as recommendations
 - [x] Copy explicitly states “I have not read this job”
-- [ ] Summary output wired to archetype lookup
-- [ ] Archetype text hidden after hydration
+- [x] Summary output wired to archetype lookup
+- [x] Archetype text hidden after hydration
 
 ## Guardrails
 - [x] No job content read before hydration
