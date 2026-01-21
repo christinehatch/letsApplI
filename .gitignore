@@ -22,3 +22,8 @@ resume.txt
 
 #output files 
 applied.txt
+
+# Runtime / local state
+state/
+
+
