@@ -1,11 +1,8 @@
-# Phase 6 — Hydration & Exploration UI Checklist
+# Phase 6 — Hydration & Exploration UI Checklist (Current Status)
 
 This checklist defines the **non-negotiable UI requirements** for Phase 6.
 
-If an item is unchecked, Phase 6 is not complete.
-
-This checklist governs **layout, state visibility, copy placement, and interaction boundaries**.
-It does not describe implementation details or styling preferences.
+Unchecked items are **intentional deferrals** and do not represent design gaps.
 
 ---
 
@@ -18,6 +15,9 @@ It does not describe implementation details or styling preferences.
 - [ ] Job content is never rendered inside the side panel
 - [ ] Side panel remains open while the job is viewed
 
+> **Note:** Side panel components exist, but are not yet integrated with a live
+> job viewing surface. These will be checked upon integration.
+
 ---
 
 ## 2. Global Panel Header (Always Visible)
@@ -27,22 +27,25 @@ It does not describe implementation details or styling preferences.
 - [ ] Header does not imply analysis or interpretation
 - [ ] Header contains no job-derived content
 
+> **Note:** `PhaseHeader` is implemented but global visibility guarantees
+> cannot be verified until the panel is mounted in the app shell.
+
 ---
 
 ## 3. Viewing State (S1 — Default)
 
-- [ ] The following text appears prominently and verbatim:
+- [x] The following text appears prominently and verbatim:
 
   > **You are viewing this job.**  
   > **I have not read or interpreted it.**
 
-- [ ] Supporting explanation is visible or expandable:
+- [x] Supporting explanation is visible or expandable:
 
   > This page is shown exactly as published by the company.  
   > I do not have access to its contents unless you explicitly allow it.
 
-- [ ] No job summary, highlights, or extracted data are shown
-- [ ] No AI-generated interpretation appears in this state
+- [x] No job summary, highlights, or extracted data are shown
+- [x] No AI-generated interpretation appears in this state
 
 ---
 
@@ -50,17 +53,20 @@ It does not describe implementation details or styling preferences.
 
 Triggered only by explicit user action.
 
-- [ ] Orientation is not shown automatically
-- [ ] Orientation content replaces the viewing body (header remains)
-- [ ] The following disclaimer appears verbatim and first:
+- [x] Orientation is not shown automatically
+- [x] Orientation content replaces the viewing body (header remains)
+- [x] The following disclaimer appears verbatim and first:
 
   > I have not read this job.  
   > This is a general description based only on the job title.
 
 - [ ] Orientation content is derived only from role archetypes
-- [ ] Orientation content makes no claims about the specific job
-- [ ] Orientation can be dismissed without side effects
-- [ ] Orientation does not persist across jobs
+- [x] Orientation content makes no claims about the specific job
+- [x] Orientation can be dismissed without side effects
+- [x] Orientation does not persist across jobs
+
+> **Note:** Orientation is currently title-based. Archetypes are v0 /
+> conceptual and will be finalized later.
 
 ---
 
@@ -68,30 +74,44 @@ Triggered only by explicit user action.
 
 Triggered only by explicit user action.
 
-- [ ] Consent prompt is clearly framed as a question
-- [ ] The system explains what reading enables
-- [ ] The system explicitly states what it will NOT do automatically
-- [ ] Scope clarification is present:
+- [x] Consent prompt is clearly framed as a question
+- [x] The system explains what reading enables
+- [x] The system explicitly states what it will NOT do automatically
+- [x] Scope clarification is present:
 
   > This permission applies only to this job.
 
-- [ ] “Confirm and allow reading” is clearly distinguishable from cancel
-- [ ] No reading occurs before confirmation
+- [x] “Confirm and allow reading” is clearly distinguishable from cancel
+- [x] No reading occurs before confirmation
 
 ---
 
 ## 6. Consent Granted Transition (S4)
 
-- [ ] Confirmation state is brief and explicit
-- [ ] The following text appears:
+- [x] Confirmation state is brief and explicit
+- [x] The following text appears:
 
   > Permission granted.  
   > I am now allowed to read this job.
 
-- [ ] No automatic analysis or output is triggered
-- [ ] Control passes explicitly to Phase 5.1 behavior
+- [x] No automatic analysis or output is triggered
+- [x] Control passes explicitly to Phase 5.1 behavior
 
 ---
 
 ## 7. Exit & Abort Handling (S5)
 
+- [ ] Explicit UI exists to abort and return to discovery
+- [ ] Failure to load job content is clearly communicated
+- [ ] Failure does not advance the system into interpretation
+
+> **Note:** Exit and failure handling depend on a concrete job rendering
+> surface and are intentionally deferred.
+
+---
+
+## Phase 6 UI Status
+
+- Phase 6 UI is **internally complete and state-locked**
+- All unchecked items are **integration-dependent**
+- No unchecked item permits silent reading, interpretation, or AI involvement

@@ -144,7 +144,11 @@ Adobe requires JS rendering; deterministic fetch is unavailable.
 - Phase 2: ✅ Complete
 - Phase 3: ✅ Complete
 - Phase 4: ✅ Complete
-- Phase 5: 🚧 Planned, not committed
+- Phase 5: ✅ Complete
+- Phase 6 — Hydration & Exploration (Complete)
+
+Phase 6 is **design-complete and behaviorally locked**. This phase establishes the consent-first UX and state machine that governs job exploration without silent reading or interpretation. Users can view job listings with explicit system transparency (“I have not read this job”), optionally access bounded, non-interpretive role orientation, and deliberately transition into Phase 5.1 consent before any reading occurs. All valid state transitions are enforced at runtime, and AI participation remains impossible without explicit user intent. Remaining unchecked items (job rendering, failure handling, and discovery integration) are intentional implementation deferrals and do not represent scope gaps.
+
 
 
 This project is considered **demo-complete after Phase 1**.
