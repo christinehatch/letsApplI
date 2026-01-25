@@ -60,18 +60,26 @@ class Phase51Reader:
             raise SourceUnavailableError("No fetch function provided")
 
         # ---- Single authorized fetch ----
+        # ---- Single authorized fetch ----
         self._fetch_call_count += 1
-        content = self._fetch_job_content()
+
+        try:
+            content = self._fetch_job_content()
+            availability = "available"
+        except Exception:
+            content = None
+            availability = "unavailable"
 
         return ReadResult(
             job_id=self._consent.job_id,
             content=content,
             source=SourceDescriptor(
                 origin="job_posting",
-                availability="available",
+                availability=availability,
             ),
             read_at=datetime.now(timezone.utc),
         )
+
     # -------------------------
     # Test-only visibility
     # -------------------------
