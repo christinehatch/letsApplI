@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 
+# pytest artifacts
+pytest/
+.pytest_cache/
+
 # IDE
 .idea/
 
