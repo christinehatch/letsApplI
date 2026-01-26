@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 
 
@@ -18,16 +18,17 @@ class InterpretationInput:
 @dataclass(frozen=True)
 class InterpretationResult:
     """
-    Output of Phase 5.2 interpretation.
+    Output of Phase 5.2 Interpretation.
 
     IMPORTANT:
-    - This is NOT advice
-    - This is NOT ranking
-    - This is NOT recommendation
+    This represents structured interpretation ONLY.
+    It does not imply evaluation, fit, or recommendation.
     """
+
     job_id: str
     interpreted_at: datetime
+    source_read_at: datetime
 
-    # intentionally empty for now
-    notes: Optional[str] = None
-
+    artifacts: Dict[str, List[str]]
+    confidence: str
+    limitations: List[str]
