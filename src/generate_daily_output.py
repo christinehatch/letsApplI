@@ -10,12 +10,47 @@ This script is intentionally read-only and rule-based.
 
 from datetime import datetime
 from pathlib import Path
+from typing import  Optional, Mapping
 
-from state import apply_first_seen
-from sources.example_company import fetch_jobs as fetch_company_jobs
-from sources.example_board import fetch_jobs as fetch_board_jobs
-from sources.stripe_careers import fetch_jobs as fetch_stripe_jobs
+from src.state import apply_first_seen
+from src.sources.example_company import fetch_jobs as fetch_company_jobs
+from src.sources.example_board import fetch_jobs as fetch_board_jobs
+from src.sources.stripe_careers import fetch_jobs as fetch_stripe_jobs
 
+
+
+def generate_daily_output(
+    intent: Optional[str] = None,
+    *,
+    now: datetime | None = None,
+) -> tuple[str, dict[str, dict]]:
+    """
+    Build and return the daily job feed as markdown.
+
+    - `intent` is accepted for session plumbing only.
+    - `now` is injectable for testability.
+    """
+    if intent:
+        print(f"[debug] discovery intent received: {intent}")
+    if now is None:
+        now = datetime.now().replace(microsecond=0)
+
+    jobs = (
+            fetch_company_jobs()
+            + fetch_board_jobs()
+            + fetch_stripe_jobs()
+    )
+
+    jobs = apply_first_seen(jobs, now)
+
+    jobs = [j for j in jobs if assert_min_schema(j)]
+
+    job_id_map = {
+        f"{job['source']}:{job['source_job_id']}": job
+        for job in jobs
+    }
+    markdown = generate_markdown(jobs, job_id_map=job_id_map)
+    return markdown, job_id_map
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REQUIRED_FIELDS = {
@@ -64,12 +99,16 @@ def build_reasons(job, now):
 
     return reasons
 
-def format_job(job, now):
+def format_job(job, now, display_id: str | None = None ):
     first_seen_at = job["first_seen_at"]
     hours_ago = hours_since(first_seen_at, now)
 
+    title = job["title"]
+    if display_id:
+        title = f"[{display_id}] {title}"
+
     lines = [
-        f"**{job['title']}**",
+        f"**{title}**",
         f"- Company: {job['company']}",
         f"- Location: {job['location']}",
         f"- Source: {job['source']}",
@@ -89,9 +128,17 @@ def format_job(job, now):
     lines.append("")
     return lines
 
-def generate_markdown(jobs):
+def generate_markdown(jobs, job_id_map: Mapping[str, dict] | None = None):
     today = datetime.now().strftime("%Y-%m-%d")
     now = datetime.now()
+
+    def _id_for(job):
+        if not job_id_map:
+            return None
+        for k, v in job_id_map.items():
+            if v is job:
+                return k
+        return None
 
     high = [j for j in jobs if is_high_priority(j, now)]
     medium = [j for j in jobs if is_medium_priority(j, now) and j not in high]
@@ -109,7 +156,9 @@ def generate_markdown(jobs):
         lines.append("_No high-priority jobs today._\n")
 
     for job in high:
-        lines.extend(format_job(job, now))
+        lines.extend(
+            format_job(job, now, display_id=_id_for(job))
+        )
 
     lines.extend([
         "",
@@ -124,8 +173,9 @@ def generate_markdown(jobs):
         lines.append("_No medium-priority jobs today._\n")
 
     for job in medium:
-        lines.extend(format_job(job, now))
-
+        lines.extend(
+            format_job(job, now, display_id=_id_for(job))
+        )
     lines.extend([
         "",
         "## 🧊 Skipped / Deprioritized",
@@ -139,20 +189,14 @@ def generate_markdown(jobs):
     if not low:
         lines.append("_No deprioritized jobs today._\n")
 
-
     for job in low:
-        lines.extend(format_job(job, now))
-
+        lines.extend(
+            format_job(job, now, display_id=_id_for(job))
+        )
 
     return "\n".join(lines)
 if __name__ == "__main__":
-    now = datetime.now().replace(microsecond=0)
-    jobs = apply_first_seen(jobs, now)
-
-    output = generate_markdown(jobs)
-    output_path = REPO_ROOT / "DAILY_OUTPUT.md"
-    with open(output_path, "w") as f:
-        f.write(output)
-
-    print("Generated DAILY_OUTPUT.md")
-    print(f"Generated {output_path}")
+    print(
+        "This module is not meant to be run directly.\n"
+        "Use: python -m src.session.run_daily"
+    )

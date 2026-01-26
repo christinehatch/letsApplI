@@ -61,7 +61,7 @@ def fetch_jobs() -> List[Dict]:
         return []
 
     jobs = payload.get("jobs", [])
-    now = datetime.now()
+
 
     normalized: List[Dict] = []
 
@@ -87,7 +87,7 @@ def fetch_jobs() -> List[Dict]:
                 "company": COMPANY_NAME,
                 "location": location,
                 "url": url,
-                "first_seen_at": now,
+                "first_seen_at": None,
             }
         )
 
