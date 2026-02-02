@@ -1,6 +1,7 @@
 import subprocess
 import sys
 from pathlib import Path
+import os
 
 
 def run_cli(args):
@@ -17,11 +18,16 @@ def run_cli(args):
         *args,
     ]
 
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src" + (
+        os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else ""
+    )
+
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
-        env=None,  # inherit environment (important for USE_LLM_SHADOW_MODE)
+        env=env,
     )
 
     return result.stdout, result.stderr
