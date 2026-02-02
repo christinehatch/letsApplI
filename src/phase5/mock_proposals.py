@@ -1,7 +1,6 @@
 import os
 
 from phase5.proposal import Proposal
-from llm.adapter import LLMAdapter
 
 
 FALLBACK_TEXT = "This is an example AI-generated phrasing suggestion."
@@ -21,6 +20,8 @@ def get_mock_proposals():
 
     if os.getenv("USE_LLM_SHADOW_MODE") == "1":
         try:
+            from llm.adapter import LLMAdapter
+            adapter = LLMAdapter()
             # 🧪 Test-only override (cross-process safe)
             test_override = os.getenv("LLM_SHADOW_TEST_OUTPUT")
 
