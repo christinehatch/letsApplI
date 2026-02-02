@@ -34,7 +34,7 @@ def apply_first_seen(jobs: list[dict], now: datetime) -> list[dict]:
     for job in jobs:
         if job.get("first_seen_at") is not None:
             continue
-            
+
         key = job_identity(job)
 
         if key in seen:
