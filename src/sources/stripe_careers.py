@@ -9,40 +9,17 @@ from datetime import datetime
 import json
 import urllib.request
 from typing import List, Dict
+from discovery.location_filters import is_stripe_norcal
+
 
 GREENHOUSE_BOARD_URL = "https://boards-api.greenhouse.io/v1/boards/stripe/jobs"
 
 SOURCE_LABEL = "stripe"
 COMPANY_NAME = "Stripe"
 
-# Phase 3 explicit Northern California allowlist
-# String-based only — no inference
-NORCAL_LOCATION_ALLOWLIST = {
-    "SF",
-    "San Francisco",
-    "San Francisco, CA",
-    "San Jose",
-    "San Jose, CA",
-    "Sunnyvale",
-    "Sunnyvale, CA",
-    "Mountain View",
-    "Mountain View, CA",
-    "Cupertino",
-    "Cupertino, CA",
-    "Redwood City",
-    "Redwood City, CA",
-}
 
 
-def _is_norcal_location(location: str) -> bool:
-    if not location:
-        return False
 
-    for allowed in NORCAL_LOCATION_ALLOWLIST:
-        if allowed in location:
-            return True
-
-    return False
 
 
 def fetch_jobs() -> List[Dict]:
@@ -57,12 +34,9 @@ def fetch_jobs() -> List[Dict]:
         with urllib.request.urlopen(GREENHOUSE_BOARD_URL, timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except Exception:
-        # Fail closed: no partial data, no exceptions leaked
         return []
 
     jobs = payload.get("jobs", [])
-    now = datetime.now()
-
     normalized: List[Dict] = []
 
     for job in jobs:
@@ -71,12 +45,10 @@ def fetch_jobs() -> List[Dict]:
         location = (job.get("location") or {}).get("name")
         url = job.get("absolute_url")
 
-        # Required fields must exist
         if not job_id or not title or not location or not url:
             continue
 
-        # Phase 3 scope: Northern California only
-        if not _is_norcal_location(location):
+        if not is_stripe_norcal(location):
             continue
 
         normalized.append(
@@ -87,9 +59,11 @@ def fetch_jobs() -> List[Dict]:
                 "company": COMPANY_NAME,
                 "location": location,
                 "url": url,
-                "first_seen_at": now,
             }
         )
 
     return normalized
+
+
+
 

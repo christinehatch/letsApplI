@@ -20,9 +20,17 @@ def load_text(path: Path) -> str:
 
 
 def run_gap(args):
-    job_text = load_text(Path(args.job))
-    resume_text = load_text(Path(args.resume))
+    if not getattr(args, "i_consent_to_read_job", False):
+        print("Blocked: Phase 5.1 requires explicit consent to read job text.")
+        print("Re-run with --i-consent-to-read-job")
+        return
 
+    try:
+        job_text = load_text(Path(args.job))
+        resume_text = load_text(Path(args.resume))
+    except FileNotFoundError as e:
+        print(f"File not found: {e.filename}")
+        return
     requirements = extract_requirements(job_text)
     matches = match_evidence(requirements, resume_text)
     output_md = render_gap_summary(matches)
@@ -130,12 +138,17 @@ def main():
     )
     gap_parser.add_argument("--job", required=True, help="Path to job posting text file")
     gap_parser.add_argument("--resume", required=True, help="Path to resume text file")
+    gap_parser.add_argument(
+        "--i-consent-to-read-job",
+        action="store_true",
+        help="Explicit consent for Phase 5.1 to read job posting text",
+    )
     gap_parser.set_defaults(func=run_gap)
 
     # --- proposals subcommand ---
     proposals_parser = subparsers.add_parser(
         "proposals",
-        help="List optional AI proposals (requires explicit opt-in)"
+        help="List optional proposals (LLM generation requires USE_LLM_SHADOW_MODE=1)"
     )
 
     proposals_subparsers = proposals_parser.add_subparsers(dest="action")
