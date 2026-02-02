@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from src.phase5.phase5_1.reader import Phase51Reader
-from src.phase5.phase5_1.types import ConsentPayload, ReadResult
-
+from phase5.phase5_1.reader import Phase51Reader
+from phase5.phase5_1.types import ConsentPayload, ReadResult
+from phase5.phase5_1.sources.stripe_greenhouse import fetch_stripe_job_content
 
 def read_job_for_ui(
     consent: ConsentPayload,
@@ -38,7 +38,11 @@ def read_job_interactive(job_id: str) -> None:
 
     # --- TEMP fetch stub (safe + replaceable) ---
     def fetch_job_content() -> str:
-        return f"[Stub] Raw job content for {job_id}"
+        if job_id.startswith("stripe:"):
+            _, source_job_id = job_id.split(":", 1)
+            return fetch_stripe_job_content(source_job_id)
+
+        return "[No fetcher available for this job source]"
 
     consent = ConsentPayload(
         job_id=job_id,
