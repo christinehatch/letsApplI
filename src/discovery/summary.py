@@ -7,7 +7,7 @@ from discovery.archetypes import match_archetype
 
 
 
-def summarize_since(since_ts: float, *, explain_roles: bool = False) -> str:
+def summarize_since(since_ts: float) -> str:
     jobs = load_jobs()
     from discovery.location_filters import is_sf_bay_area
 
@@ -35,19 +35,6 @@ def summarize_since(since_ts: float, *, explain_roles: bool = False) -> str:
             loc = f" — {j.location}" if j.location else ""
             lines.append(f"- {j.title}{loc}")
             lines.append(f"  {j.url}")
-
-            # Optional archetype orientation (title-only, pre-hydration safe)
-            if explain_roles:
-                match = match_archetype(j.title)
-
-                if match.archetype != "UNKNOWN":
-                    lines.append("  ")
-                    lines.append("  What is this role generally?")
-                    lines.append("  I have not read this job.")
-                    lines.append(f"  {match.label} roles are generally associated with:")
-
-                    for line in match.orientation_lines:
-                        lines.append(f"   - {line}")
 
         lines.append("")
 
