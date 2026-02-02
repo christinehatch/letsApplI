@@ -42,7 +42,6 @@ Each job returned by the adapter MUST contain **exactly** the following fields:
 * `company`: `"Stripe"`
 * `location`: raw location string as provided by Greenhouse
 * `url`: canonical job posting URL
-* `first_seen_at`: datetime assigned at fetch time
 
 No additional fields are required in Phase 3.
 
@@ -107,7 +106,7 @@ The adapter MUST NOT:
 ## Relationship to Other Phases
 
 * Phase 3: real data ingestion only
-* Phase 4: persistence and `first_seen_at` stability
+* Phase 4: persistence, assignment, and stability of `first_seen_at`
 * Phase 5: human interaction and guidance
 
 This contract is intentionally minimal and conservative.
