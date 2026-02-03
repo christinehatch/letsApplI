@@ -13,8 +13,20 @@ import { Phase6StateRouter } from "./Phase6StateRouter";
 export interface Phase6SidePanelProps {
   jobId: string;
   jobTitle: string;
+  /**
+   * Handoff hook to Phase 5.1.
+   * Called only when state transitions to CONSENT_GRANTED.
+   */
+  onConsentGranted: (payload: {
+    job_id: string;
+    consent: {
+      granted: boolean;
+      scope: string;
+      granted_at: string;
+      revocable: boolean;
+    };
+  }) => void;
 }
-
 /**
  * Phase 6 Side Panel
  *
@@ -32,12 +44,26 @@ export interface Phase6SidePanelProps {
 export function Phase6SidePanel({
   jobId,
   jobTitle,
-}: Phase6SidePanelProps) {
+  onConsentGranted, // Add this
+}: Phase6SidePanelProps)  {
   const [state, setState] = useState<Phase6State>("VIEWING");
 
   function transition(to: Phase6State) {
     assertValidTransition(state, to);
     setState(to);
+
+    // If the state transition is to CONSENT_GRANTED, construct and emit the payload
+    if (to === "CONSENT_GRANTED") {
+      onConsentGranted({
+        job_id: jobId,
+        consent: {
+          granted: true,
+          scope: "read_job_posting",
+          granted_at: new Date().toISOString(),
+          revocable: true,
+        },
+      });
+    }
   }
 
   return (
