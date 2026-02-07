@@ -1,61 +1,38 @@
-from datetime import datetime, timezone
-
+# src/ui/read_job.py
+import os
 from phase5.phase5_1.reader import Phase51Reader
-from phase5.phase5_1.types import ConsentPayload, ReadResult
-from phase5.phase5_1.sources.stripe_greenhouse import fetch_stripe_job_content
+from phase5.phase5_1.types import ReadResult
 
-def read_job_for_ui(
-    consent: ConsentPayload,
-    fetch_job_content,
-) -> ReadResult:
-    """
-    UI-facing adapter for Phase 5.1.
+def get_fetcher(job_id: str):
+    def fetch_job_content() -> str:
+        # Use absolute path to avoid "where am I?" confusion
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        file_path = os.path.join(base_dir, "job.txt")
 
-    This function:
-    - does NOT interpret
-    - does NOT transform content
-    - does NOT persist results
-    - returns ReadResult verbatim
-    """
+        print(f"\n--- [CHECKPOINT 1: DISCOVERY] ---")
+        print(f"Targeting path: {file_path}")
 
+        try:
+            if not os.path.exists(file_path):
+                print(f"!!! ERROR: job.txt does not exist at that location.")
+                return ""
+
+            with open(file_path, "r") as f:
+                content = f.read()
+                print(f"SUCCESS: Read {len(content)} characters from job.txt")
+                # Print the first 50 chars to be sure
+                print(f"PREVIEW: {content[:50]}...")
+                return content
+        except Exception as e:
+            print(f"!!! SYSTEM ERROR: {str(e)}")
+            return ""
+
+    return fetch_job_content
+
+
+# ADD THIS FUNCTION BACK:
+def read_job_for_ui(consent, fetch_job_content) -> ReadResult:
+    """Standard Phase 5.1 Entrypoint—Does not interpret or persist."""
     reader = Phase51Reader(fetch_job_content=fetch_job_content)
     reader.set_consent(consent)
-
     return reader.read()
-
-
-def read_job_interactive(job_id: str) -> None:
-    """
-    UX-facing interactive job reader.
-
-    This function is responsible for:
-    - creating consent
-    - wiring fetch behavior
-    - displaying results to the user
-
-    It does NOT interpret or analyze.
-    """
-
-    # --- TEMP fetch stub (safe + replaceable) ---
-    def fetch_job_content() -> str:
-        if job_id.startswith("stripe:"):
-            _, source_job_id = job_id.split(":", 1)
-            return fetch_stripe_job_content(source_job_id)
-
-        return "[No fetcher available for this job source]"
-
-    consent = ConsentPayload(
-        job_id=job_id,
-        scope="read_job_posting",
-        granted_at=datetime.now(timezone.utc),
-        revocable=True,
-    )
-
-    result = read_job_for_ui(
-        consent=consent,
-        fetch_job_content=fetch_job_content,
-    )
-
-    print("\n--- Job Content ---\n")
-    print(result.content or "[No content available]")
-    print("\n-------------------\n")
