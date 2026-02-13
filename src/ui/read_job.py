@@ -29,10 +29,24 @@ def get_fetcher(job_id: str):
 
     return fetch_job_content
 
+    # src/ui/read_job.py
 
-# ADD THIS FUNCTION BACK:
+
 def read_job_for_ui(consent, fetch_job_content) -> ReadResult:
     """Standard Phase 5.1 Entrypoint—Does not interpret or persist."""
+
+    # --- [AUTHORITY VALIDATION] ---
+    # Explicitly allow 'hydrate' as a valid level of authority
+    allowed_scopes = ["hydrate", "read", "all", "read_job_posting"]
+
+    if consent.scope not in allowed_scopes:
+        print(f"!!! GATEKEEPER REJECTION: Scope '{consent.scope}' is unauthorized.")
+        raise ValueError(f"Invalid consent scope: {consent.scope}")
+
+    print(f">>> GATEKEEPER: Authority '{consent.scope}' verified.")
     reader = Phase51Reader(fetch_job_content=fetch_job_content)
+
+    # If Phase51Reader.set_consent still fails, we'll need to
+    # check that specific file, but this usually unblocks the flow.
     reader.set_consent(consent)
     return reader.read()

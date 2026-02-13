@@ -26,38 +26,37 @@ app.add_middleware(
 class HandoffPayload(BaseModel):
     job_id: str
     consent: dict
-
+    request_to_fetch: bool = False # NEW: Accept the fetch flag
 
 @app.post("/api/read-job")
 async def handle_read_job(payload: HandoffPayload):
     try:
-        # 1. Phase 5.1: Process Consent
-        ts_str = payload.consent["granted_at"].replace("Z", "+00:00")
+        # 1. Phase 5.1: Process Authority
+        # We pass the scope "hydrate" directly to the ConsentPayload
         consent = ConsentPayload(
             job_id=payload.job_id,
-            scope=payload.consent["scope"],
-            granted_at=datetime.fromisoformat(ts_str),
+            scope=payload.consent["scope"],  # This will be "hydrate"
+            granted_at=datetime.fromisoformat(payload.consent["granted_at"].replace("Z", "+00:00")),
             revocable=payload.consent["revocable"]
         )
-
-        # Inside bridge_server.py -> handle_read_job
-        print(f"\n>>> BRIDGE CALL: Job ID {payload.job_id}")
 
         fetcher = get_fetcher(consent.job_id)
         read_result = read_job_for_ui(consent, fetcher)
 
-        # ADD THIS LINE:
-        print(f">>> HYDRATION RESULT: '{read_result.content[:30]}...' (Length: {len(read_result.content or '')})")
-        # REFINEMENT: If content is missing, return early or handle gracefully
-        if not read_result.content:
+        # 2. Principled Routing
+        # If the scope is "hydrate", we MUST return early.
+        # The interpreter is physically prevented from running.
+        if consent.scope == "hydrate" or payload.request_to_fetch:
+            print(f">>> Phase 5.1 HYDRATE Authority for {payload.job_id}")
             return {
                 "job_id": read_result.job_id,
-                "content": "Job content is currently unavailable.",
+                "content": read_result.content,
                 "requirements": [],
                 "availability": read_result.source.availability
             }
-        # 3. Phase 5.2: Invoke Interpreter
-        # This takes the output of 5.1 and feeds it into the 5.2 contract
+
+        # 3. Phase 5.2: Invoke Interpreter (Intelligence)
+        # This only runs if request_to_fetch is False
         interpreter = Phase52Interpreter()
         interpretation_input = InterpretationInput(
             job_id=read_result.job_id,
@@ -65,21 +64,18 @@ async def handle_read_job(payload: HandoffPayload):
             read_at=read_result.read_at
         )
 
-        # Inside handle_read_job in bridge_server.py
         interpreter.set_input(interpretation_input)
         interpretation_result = interpreter.interpret()
 
         return {
             "job_id": read_result.job_id,
             "content": read_result.content,
-            # Map the artifact list to the UI's expected key
             "requirements": interpretation_result.artifacts.get("requirements", []),
             "availability": read_result.source.availability
         }
     except Exception as e:
         print(f"Bridge Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
-
 
 if __name__ == "__main__":
     import uvicorn

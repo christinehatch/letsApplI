@@ -50,7 +50,8 @@ class Phase51Reader:
             raise ConsentRevokedError("Consent has been revoked")
 
         # ---- Scope must be exact ----
-        if self._consent.scope != "read_job_posting":
+        authorized_scopes = ["read_job_posting", "hydrate"]
+        if self._consent.scope not in authorized_scopes:
             raise InvalidScopeError(
                 f"Invalid consent scope: {self._consent.scope}"
             )
