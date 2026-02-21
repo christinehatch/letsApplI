@@ -1,6 +1,5 @@
-import React, { useState } from "react";
-import { Phase6SidePanel } from "../phase6/Phase6SidePanel";
-
+import React, { useState, useRef } from "react";
+import { Phase6SidePanel, type Phase6SidePanelHandle } from "../phase6/Phase6SidePanel";
 export function App() {
   // --- State ---
   const [selectedJob, setSelectedJob] = useState<any>(null); // State to track the active selection
@@ -10,13 +9,15 @@ export function App() {
   const [isReading, setIsReading] = useState(false);
   const [availableJobs] = useState([
   {
-    id: "stripe:7409686",
+    id: "greenhouse:stripe:7409686",
     title: "Software Engineer, Product",
     company: "Stripe",
     url: "https://boards.greenhouse.io/stripe/jobs/7409686"
   }
 ]);
-
+  const phase6Ref = useRef<Phase6SidePanelHandle | null>(null);
+  const [userPreviewUrl, setUserPreviewUrl] = useState<string | null>(null);
+  const [previewVersion, setPreviewVersion] = useState(0);
   // --- Handlers ---
   const handleJobSelect = (job: any) => {
     setSelectedJob(job);
@@ -24,14 +25,23 @@ export function App() {
     setHydratedContent(null);
     setRequirements([]);
     setView('raw');
+    setUserPreviewUrl(null);
+
+    phase6Ref.current?.reset();
   };
 
+  const handleConsentRevoked = () => {
+    setHydratedContent(null);
+    setRequirements([]);
+    setView("raw");
+    setUserPreviewUrl(null);
+  };
   const handleConsentHandoff = async (payload: any) => {
     console.log("Phase 6 Handoff Emitted:", payload);
     setIsReading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/read-job', {
+      const response = await fetch('http://localhost:8000/api/hydrate-job', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -43,16 +53,9 @@ export function App() {
         setHydratedContent(`Error: ${result.detail || result.error}`);
       } else {
         setHydratedContent(result.content);
-        // If backend returned interpretation results, populate them
-        if (result.requirements && result.requirements.length > 0) {
-          setRequirements(result.requirements);
-          setView('structured');
-          console.log("Phase 5.2 Interpretation received.");
-        } else {
-          setRequirements([]);
-          setView('raw');
-          console.log("Phase 5.1 Hydration complete.");
-        }
+        setRequirements([]);        // Explicitly empty
+        setView('raw');             // Explicitly raw
+        console.log("Phase 5.1 Hydration complete.");
       }
     } catch (error) {
       console.error("CLI Bridge Handoff failed:", error);
@@ -80,7 +83,7 @@ export function App() {
               backgroundColor: selectedJob?.id === job.id ? "#f0f7ff" : "#fff"
             }}
           >
-            <div style={{ fontSize: "12px", fontWeight: "bold", color: "#0070f3", marginBottom: "#4px" }}>{job.company}</div>
+            <div style={{ fontSize: "12px", fontWeight: "bold", color: "#0070f3", marginBottom: "4px" }}>{job.company}</div>
             <div style={{ fontWeight: 600, fontSize: "14px" }}>{job.title}</div>
           </div>
         ))}
@@ -102,25 +105,82 @@ export function App() {
           </div>
       ) : (
           <>
-            {isReading && <p style={{color: "#0070f3"}}><em>System is reading and interpreting...</em></p>}
+            {isReading && <p style={{color: "#0070f3"}}><em>System is reading...</em></p>}
+            {userPreviewUrl && !hydratedContent && (
+                <div style={{
+                  backgroundColor: "#fff",
+                  borderRadius: "12px",
+                  border: "1px solid #eee",
+                  overflow: "hidden"
+                }}>
+                  <div style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "12px 16px",
+                    borderBottom: "1px solid #eee"
+                  }}>
+                    <div>
+                      <div style={{fontWeight: 700}}>User Preview</div>
+                      <div style={{fontSize: "12px", color: "#666"}}>
+                        This is a server-rendered preview. Hydration requires consent in the right panel.
+                      </div>
+                    </div>
+                    <button
+                        onClick={() => setUserPreviewUrl(null)}
+                        style={{
+                          border: "1px solid #ddd",
+                          background: "#fff",
+                          borderRadius: "8px",
+                          padding: "8px 12px",
+                          cursor: "pointer"
+                        }}
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <embed
+                      src={`http://localhost:8000/api/user-preview?url=${encodeURIComponent(userPreviewUrl)}&v=${previewVersion}`}
+                      type="application/pdf"
+                      style={{width: "100%", height: "70vh", border: "0"}}
+                  />
+                </div>
+            )}
+
 
             {!hydratedContent ? (
-  /* The Choice Gate - Structural Honesty */
-  <div style={{ textAlign: "center", padding: "60px", backgroundColor: "#fff", borderRadius: "12px", border: "1px solid #eee" }}>
+                /* The Choice Gate - Structural Honesty */
+                <div style={{
+                  textAlign: "center",
+                  padding: "60px",
+                  backgroundColor: "#fff", borderRadius: "12px", border: "1px solid #eee" }}>
     <h2 style={{ color: "#333" }}>{selectedJob.title} at {selectedJob.company}</h2>
     <p style={{ color: "#666", marginBottom: "32px" }}>How would you like to explore this role?</p>
 
-    <div style={{ display: "flex", gap: "20px", justifyContent: "center" }}>
-     <button
-         onClick={() => handleConsentHandoff({
-           job_id: selectedJob.id,
-           request_to_fetch: true,
-           consent: {
-             scope: "hydrate", // The new, strictly-limited authority level
-             granted_at: new Date().toISOString(),
-             revocable: true
-          }
-        })}
+    <div style={{display: "flex", gap: "20px", justifyContent: "center"}}>
+      <button
+          onClick={() => {setUserPreviewUrl(selectedJob.url); setPreviewVersion(v => v + 1);}}
+          style={{
+            padding: "16px 24px",
+            borderRadius: "8px",
+            border: "1px solid #ddd",
+            color: "#333",
+            background: "#fff",
+            cursor: "pointer",
+            fontWeight: "bold"
+          }}
+      >
+        Preview in App (User-only)
+        <div style={{fontWeight: "normal", fontSize: "12px", marginTop: "4px", color: "#666"}}>
+          Opens the live listing here. The system still has not read it.
+        </div>
+      </button>
+
+      <button
+          onClick={() => {
+            phase6Ref.current?.requestHydration();
+          }}
           style={{
             padding: "16px 24px",
             borderRadius: "8px",
@@ -133,9 +193,10 @@ export function App() {
       >
         Explore Together
         <div style={{fontWeight: "normal", fontSize: "12px", marginTop: "4px", opacity: 0.9}}>
-          I will fetch a copy of this posting to reason about it with you.
+          I will fetch and display the job posting here. Interpretation requires explicit consent in the right panel.
         </div>
       </button>
+
 
       <a
           href={selectedJob.url}
@@ -159,60 +220,39 @@ export function App() {
   </div>
             ) : (
                 /* Hydrated Analysis View (Phase 5.1 & 5.2) */
-<div style={{ marginTop: "24px" }}>
-  <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
-    <button onClick={() => setView('structured')} style={tabStyle(view === 'structured')}>
-      Structured Interpretation (5.2)
-    </button>
-    <button onClick={() => setView('raw')} style={tabStyle(view === 'raw')}>
-      Raw Content (5.1)
-    </button>
-  </div>
+                <div style={{marginTop: "24px"}}>
+                  <div style={{display: "flex", gap: "10px", marginBottom: "16px"}}>
+                    <button disabled style={{opacity: 0.4}}>
+                      Structured Interpretation (Disabled)
+                    </button>
+                    <button onClick={() => setView('raw')} style={tabStyle(view === 'raw')}>
+                      Raw Content (5.1)
+                    </button>
+                  </div>
 
-  <div style={contentBoxStyle}>
-    {view === 'raw' ? (
-      /* PHASE 5.1: The Raw Artifact - Validated by the 'hydrate' scope */
+                  <div style={contentBoxStyle}>
+                    {view === 'raw' ? (
+                        /* PHASE 5.1: The Raw Artifact - Validated by the 'hydrate' scope */
       <pre style={{ whiteSpace: "pre-wrap", fontSize: "14px", color: "#333" }}>
         {hydratedContent}
       </pre>
     ) : (
       /* PHASE 5.2: Interpretation - Gated until 'read_job_posting' authority is granted */
-      requirements.length > 0 ? (
-        <ul style={{ paddingLeft: "20px" }}>
-          {requirements.map((req, i) => (
-            <li key={i} style={{ marginBottom: "8px" }}>{req}</li>
-          ))}
-        </ul>
-      ) : (
-        <div style={{ textAlign: 'center', padding: '40px' }}>
-          <h3 style={{ color: '#333' }}>Analysis Not Yet Authorized</h3>
-          <p style={{ color: '#666', marginBottom: '24px' }}>
-            To identify specific requirements and role expectations, you must explicitly allow the system to analyze this posting.
-          </p>
-          <button
-            onClick={() => handleConsentHandoff({
-              job_id: selectedJob.id,
-              request_to_fetch: false, // This triggers the Phase 5.2 logic path in the bridge
-              consent: {
-                scope: "read_job_posting", // The higher-authority intelligence key
-                granted_at: new Date().toISOString(),
-                revocable: true
-              }
-            })}
-            style={{
-              padding: "12px 24px",
-              backgroundColor: "#0070f3",
-              color: "#fff",
-              borderRadius: "8px",
-              border: "none",
-              cursor: "pointer",
-              fontWeight: "bold"
-            }}
-          >
-            Authorize Analysis (Phase 5.2)
-          </button>
-        </div>
-      )
+     requirements.length > 0 ? (
+  <ul style={{ paddingLeft: "20px" }}>
+    {requirements.map((req, i) => (
+      <li key={i} style={{ marginBottom: "8px" }}>{req}</li>
+    ))}
+  </ul>
+) : (
+  <div style={{ textAlign: 'center', padding: '40px' }}>
+    <h3 style={{ color: '#333' }}>Waiting for Analysis Authorization</h3>
+    <p style={{ color: '#666' }}>
+      Complete the consent flow in the right panel to enable structured interpretation.
+    </p>
+  </div>
+)
+
     )}
   </div>
 </div>
@@ -223,10 +263,12 @@ export function App() {
 
       {/* 3. Authority SidePanel (Right) */}
       {selectedJob && (
-          <Phase6SidePanel
-              jobId={selectedJob.id}
-              jobTitle={selectedJob.title}
-              onConsentGranted={handleConsentHandoff}
+         <Phase6SidePanel
+            ref={phase6Ref}
+            jobId={selectedJob.id}
+            jobTitle={selectedJob.title}
+            onConsentGranted={handleConsentHandoff}
+            onConsentRevoked={handleConsentRevoked}
           />
       )}
     </div>

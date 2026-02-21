@@ -8,7 +8,6 @@ class ConsentPayload:
     job_id: str
     scope: str
     granted_at: datetime
-    revocable: bool
 
 
 @dataclass(frozen=True)
