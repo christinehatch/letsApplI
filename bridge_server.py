@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from fastapi.responses import Response
 from urllib.parse import urlparse
+from .validator_schema import validate_schema
 
 # Adds the project root to the Python path so 'src' is discoverable
 sys.path.append(os.path.join(os.getcwd(), "src"))
@@ -230,6 +231,37 @@ async def handle_hydrate_job(payload: HandoffPayload):
     except Exception as e:
         print(f"Bridge Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/interpret-job")
+async def handle_interpret_job(payload: HandoffPayload):
+    """
+    Phase 5.2 Interpretation Endpoint (LOCKED)
+
+    Requires:
+    - scope == "interpret_job_posting"
+    - Explicit consent
+    """
+
+    try:
+        scope = payload.consent.get("scope")
+
+        if scope != "interpret_job_posting":
+            raise HTTPException(
+                status_code=400,
+                detail="This endpoint only accepts 'interpret_job_posting' scope."
+            )
+
+        # Hard lock — do not unlock yet
+        raise HTTPException(
+            status_code=501,
+            detail="Phase 5.2 interpretation is not yet enabled."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

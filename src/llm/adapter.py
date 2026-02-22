@@ -1,5 +1,6 @@
 import os
 from openai import OpenAI
+import json
 
 
 class LLMAdapterError(Exception):
@@ -71,6 +72,50 @@ class LLMAdapter:
                 raise LLMAdapterError("Empty LLM response")
 
             return output.strip()
+
+        except Exception as e:
+            raise LLMAdapterError(str(e)) from e
+
+    import json
+
+    def generate_structured(
+            self,
+            *,
+            system_prompt: str,
+            user_prompt: str,
+            temperature: float = 0.0,
+            max_tokens: int = 1500,
+    ) -> dict:
+        """
+        Generate structured JSON output.
+
+        Guarantees:
+        - Returns parsed dict
+        - Raises if invalid JSON
+        - No persistence
+        """
+
+        try:
+            response = self.client.responses.create(
+                model="gpt-4o-mini",
+                input=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            )
+
+            raw_output = response.output_text
+            if not raw_output or not raw_output.strip():
+                raise LLMAdapterError("Empty structured response")
+
+            try:
+                parsed = json.loads(raw_output)
+            except json.JSONDecodeError:
+                raise LLMAdapterError("LLM did not return valid JSON")
+
+            return parsed
 
         except Exception as e:
             raise LLMAdapterError(str(e)) from e

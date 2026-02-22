@@ -1,7 +1,14 @@
 from typing import Optional
 from datetime import datetime
 
-from .types import InterpretationInput, InterpretationResult
+from .types import (
+    InterpretationInput,
+    InterpretationResult,
+    RoleSummary,
+    RequirementsAnalysis,
+    ResumeAlignment,
+    ProjectOpportunities,
+)
 from .errors import (
     InterpretationNotAuthorizedError,
     InvalidInputSourceError,
@@ -19,7 +26,7 @@ class Phase52Interpreter:
     - This class performs NO reading
     - This class performs NO fetching
     - This class performs NO persistence
-    - This class performs NO recommendation
+    - This class performs NO recommendation (strategic inference will come later)
     """
 
     def __init__(self):
@@ -30,12 +37,6 @@ class Phase52Interpreter:
     # -------------------------
 
     def set_input(self, input_payload: InterpretationInput) -> None:
-        """
-        Attach Phase 5.1-derived input.
-
-        Validation is enforced at interpret-time,
-        not here.
-        """
         self._input = input_payload
 
     # -------------------------
@@ -43,7 +44,7 @@ class Phase52Interpreter:
     # -------------------------
 
     def interpret(self) -> InterpretationResult:
-        # ---- Input Guard Checks (Keep your existing guards) ----
+        # ---- Guard Checks ----
         if self._input is None:
             raise InterpretationNotAuthorizedError("No Phase 5.1 input provided")
 
@@ -51,43 +52,9 @@ class Phase52Interpreter:
             raise InvalidInputSourceError("Empty content cannot be interpreted")
 
         if self._input.read_at is None:
-            raise InvalidInputSourceError("Interpretation requires a Phase 5.1 read timestamp")
+            raise InvalidInputSourceError(
+                "Interpretation requires a Phase 5.1 read timestamp"
+            )
 
-        # ---- THE HAPPY PATH IMPLEMENTATION ----
-
-        # 1. Extraction Logic: Identify bullet points or action-oriented lines
-            # ---- Interpretation Logic ----
-        lines = self._input.raw_content.split('\n')
-        extracted_reqs = []
-
-        for line in lines:
-            clean = line.strip()
-            if clean.startswith(('•', '-', '*', '●')) or any(
-                    kw in clean.lower() for kw in ['experience', 'proficient']):
-                extracted_reqs.append(clean.lstrip('•-* ●').strip())
-
-        # ---- Build Result according to your Phase 5.2 types ----
-        return InterpretationResult(
-            job_id=self._input.job_id,
-            interpreted_at=datetime.now(),
-            source_read_at=self._input.read_at,
-            artifacts={
-                "requirements": extracted_reqs,
-                "context_signals": ["Stripe Greenhouse Source"]
-            },
-            confidence="high",
-            limitations=[]
-        )
-    # -------------------------
-    # Internal helpers (stubs)
-    # -------------------------
-
-    def _validate_input(self) -> None:
-        raise NotImplementedError
-
-    def _interpret_content(self) -> None:
-        raise NotImplementedError
-
-    def _build_result(self) -> InterpretationResult:
-        raise NotImplementedError
-
+        # ---- Hard Lock ----
+        raise NotImplementedError("Phase 5.2 is locked (hardening mode)")

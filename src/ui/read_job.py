@@ -37,7 +37,7 @@ def read_job_for_ui(consent, fetch_job_content) -> ReadResult:
 
     # --- [AUTHORITY VALIDATION] ---
     # Explicitly allow 'hydrate' as a valid level of authority
-    allowed_scopes = ["hydrate"]
+    allowed_scopes = ["hydrate", "read_job_posting", "interpret_job_posting"]
 
     if consent.scope not in allowed_scopes:
         print(f"!!! GATEKEEPER REJECTION: Scope '{consent.scope}' is unauthorized.")
