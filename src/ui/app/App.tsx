@@ -4,7 +4,13 @@ export function App() {
   // --- State ---
   const [selectedJob, setSelectedJob] = useState<any>(null); // State to track the active selection
   const [hydratedContent, setHydratedContent] = useState<string | null>(null);
-  const [requirements, setRequirements] = useState<string[]>([]);
+  type Requirement = {
+  requirement_text: string;
+  modality: string;
+  source_span_id: string;
+};
+
+const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [view, setView] = useState<'raw' | 'structured'>('raw');
   const [isReading, setIsReading] = useState(false);
   const [availableJobs] = useState([
@@ -36,34 +42,95 @@ export function App() {
     setView("raw");
     setUserPreviewUrl(null);
   };
-  const handleConsentHandoff = async (payload: any) => {
-    console.log("Phase 6 Handoff Emitted:", payload);
-    setIsReading(true);
+ const handleConsentHandoff = async (payload: any) => {
+  console.log("Phase 6 Handoff Emitted:", payload);
 
-    try {
-      const response = await fetch('http://localhost:8000/api/hydrate-job', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+  const scope = payload?.consent?.scope;
 
-      const result = await response.json();
+  if (!scope) {
+    console.error("Missing consent scope.");
+    return;
+  }
 
-      if (result.detail || result.error) {
-        setHydratedContent(`Error: ${result.detail || result.error}`);
-      } else {
-        setHydratedContent(result.content);
-        setRequirements([]);        // Explicitly empty
-        setView('raw');             // Explicitly raw
-        console.log("Phase 5.1 Hydration complete.");
+  if (scope === "hydrate") {
+    await handleHydration(payload);
+    return;
+  }
+
+  if (scope === "interpret_job_posting") {
+    await handleInterpretation(payload);
+    return;
+  }
+
+  console.error("Unknown consent scope:", scope);
+};
+
+ const handleHydration = async (payload: any) => {
+  setIsReading(true);
+
+  try {
+    const response = await fetch(
+      "http://localhost:8000/api/hydrate-job",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       }
-    } catch (error) {
-      console.error("CLI Bridge Handoff failed:", error);
-      setHydratedContent("Failed to connect to the backend bridge.");
-    } finally {
-      setIsReading(false);
+    );
+
+    const result = await response.json();
+
+
+    if (result.detail || result.error) {
+      setHydratedContent(`Error: ${result.detail || result.error}`);
+    } else {
+      setHydratedContent(result.content);
+      setRequirements([]);
+      setView("raw");
+
+      console.log("Phase 5.1 Hydration complete.");
+      phase6Ref.current?.completeHydration();
     }
-  };
+  } catch (error) {
+    console.error("Hydration failed:", error);
+  } finally {
+    setIsReading(false);
+  }
+};
+
+ const handleInterpretation = async (payload: any) => {
+  console.log("Interpretation requested.");
+
+  try {
+    const response = await fetch(
+      "http://localhost:8000/api/interpret-job",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const result = await response.json();
+    console.log("Interpretation response:", result);
+
+    if (response.status !== 200) {
+      console.error("Interpretation error:", result.detail);
+      return;
+    }
+
+    const explicit =
+      result.interpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
+
+    setRequirements(explicit);
+    setView("structured");
+
+    phase6Ref.current?.completeInterpretation();
+  } catch (error) {
+    console.error("Interpretation failed:", error);
+  }
+};
+
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
@@ -239,23 +306,30 @@ export function App() {
     ) : (
       /* PHASE 5.2: Interpretation - Gated until 'read_job_posting' authority is granted */
      requirements.length > 0 ? (
-  <ul style={{ paddingLeft: "20px" }}>
-    {requirements.map((req, i) => (
-      <li key={i} style={{ marginBottom: "8px" }}>{req}</li>
-    ))}
-  </ul>
-) : (
-  <div style={{ textAlign: 'center', padding: '40px' }}>
-    <h3 style={{ color: '#333' }}>Waiting for Analysis Authorization</h3>
-    <p style={{ color: '#666' }}>
-      Complete the consent flow in the right panel to enable structured interpretation.
-    </p>
-  </div>
-)
+         <ul style={{paddingLeft: "20px"}}>
+             {requirements.map((req, i) => (
+                 <li key={i} style={{marginBottom: "12px"}}>
+                     <div style={{fontWeight: 600}}>
+                         {req.requirement_text}
+                     </div>
+                     <div style={{fontSize: "12px", color: "#666"}}>
+                         Modality: {req.modality}
+                     </div>
+                 </li>
+             ))}
+         </ul>
+     ) : (
+         <div style={{textAlign: 'center', padding: '40px'}}>
+             <h3 style={{color: '#333'}}>Waiting for Analysis Authorization</h3>
+             <p style={{color: '#666'}}>
+                 Complete the consent flow in the right panel to enable structured interpretation.
+             </p>
+         </div>
+     )
 
-    )}
-  </div>
-</div>
+                    )}
+                  </div>
+                </div>
             )}
           </>
       )}

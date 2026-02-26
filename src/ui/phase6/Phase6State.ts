@@ -4,18 +4,36 @@
 export type Phase6State =
   | "VIEWING"
   | "ORIENTED"
-  | "CONSENT_REQUESTED"
-  | "CONSENT_GRANTED";
+  | "CONSENT_REQUESTED_HYDRATION"
+  | "HYDRATING"
+  | "HYDRATED"
+  | "CONSENT_REQUESTED_INTERPRETATION"
+  | "INTERPRETING"
+  | "INTERPRETED";
 
-// Explicitly enumerate allowed transitions.
-// Any transition not listed here is invalid by design.
 export const ALLOWED_TRANSITIONS: Record<Phase6State, Phase6State[]> = {
-  VIEWING: ["ORIENTED", "CONSENT_REQUESTED"],
-  ORIENTED: ["VIEWING", "CONSENT_REQUESTED"],
-  CONSENT_REQUESTED: ["VIEWING", "CONSENT_GRANTED"],
-  CONSENT_GRANTED: [],
-};
+  VIEWING: ["ORIENTED", "CONSENT_REQUESTED_HYDRATION"],
 
+  ORIENTED: ["VIEWING", "CONSENT_REQUESTED_HYDRATION"],
+
+  CONSENT_REQUESTED_HYDRATION: ["VIEWING", "HYDRATING"],
+
+  HYDRATING: ["HYDRATED", "VIEWING"],
+
+  HYDRATED: [
+    "VIEWING", // revoke hydration
+    "CONSENT_REQUESTED_INTERPRETATION",
+  ],
+
+  CONSENT_REQUESTED_INTERPRETATION: [
+    "HYDRATED",
+    "INTERPRETING",
+  ],
+
+  INTERPRETING: ["INTERPRETED", "HYDRATED"],
+
+  INTERPRETED: ["HYDRATED", "VIEWING"],
+};
 // Type-safe transition guard.
 // UI code MUST call this before changing state.
 export function canTransition(

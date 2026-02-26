@@ -10,13 +10,14 @@ import { Phase6StateRouter } from "./Phase6StateRouter";
 
 export type Phase6SidePanelHandle = {
   requestHydration: () => void;
+  requestInterpretation: () => void;
+  completeHydration: () => void;        // ✅ add
+  completeInterpretation: () => void;   // future use
   reset: () => void;
   revoke: () => void;
-
-
 };
 
-type ConsentScope = "hydrate" | "read_job_posting";
+type ConsentScope = "hydrate" | "interpret_job_posting";
 
 export interface Phase6SidePanelProps {
   jobId: string;
@@ -60,27 +61,30 @@ export const Phase6SidePanel = forwardRef<
   const [state, setState] = useState<Phase6State>("VIEWING");
 
   // ✅ NEW: Phase 6 is now the single place that decides what scope is being requested.
-  const [requestedScope, setRequestedScope] = useState<ConsentScope>("read_job_posting");
+  const [requestedScope, setRequestedScope] =
+  useState<ConsentScope>("hydrate");
 
   const transition = useCallback(
-    (to: Phase6State) => {
-      assertValidTransition(state, to);
-      setState(to);
+  (to: Phase6State) => {
+    assertValidTransition(state, to);
 
-      // ✅ Emit payload ONLY at the boundary moment.
-      if (to === "CONSENT_GRANTED") {
-        onConsentGranted({
-          job_id: jobId,
-          consent: {
-            granted: true,
-            scope: requestedScope, // ✅ use requested scope, not a hard-coded string
-            granted_at: new Date().toISOString(),
-          },
-        });
-      }
-    },
-    [jobId, onConsentGranted, requestedScope, state]
-  );
+    // First update local state
+    setState(to);
+
+    // Then trigger authority handoff AFTER state update
+    if (to === "HYDRATING" || to === "INTERPRETING") {
+      onConsentGranted({
+        job_id: jobId,
+        consent: {
+          granted: true,
+          scope: requestedScope,
+          granted_at: new Date().toISOString(),
+        },
+      });
+    }
+  },
+  [state, jobId, onConsentGranted, requestedScope]
+);
 
   // ✅ NEW: App.tsx can only *ask Phase 6* to start a consent flow.
   // It cannot construct payloads or scopes.
@@ -89,18 +93,30 @@ export const Phase6SidePanel = forwardRef<
   () => ({
     requestHydration: () => {
       setRequestedScope("hydrate");
-      transition("CONSENT_REQUESTED");
+      transition("CONSENT_REQUESTED_HYDRATION");
+    },
+
+    requestInterpretation: () => {
+      setRequestedScope("interpret_job_posting");
+      transition("CONSENT_REQUESTED_INTERPRETATION");
+    },
+    completeHydration: () => {
+      transition("HYDRATED");
+    },
+
+    completeInterpretation: () => {
+      transition("INTERPRETED");
     },
 
     reset: () => {
-      setRequestedScope("read_job_posting");
+      setRequestedScope("hydrate");
       transition("VIEWING");
     },
 
     revoke: () => {
-      setRequestedScope("read_job_posting");
-      setState("VIEWING");
-      onConsentRevoked();   // ✅ now valid
+        setRequestedScope("hydrate");
+        transition("VIEWING");
+        onConsentRevoked();   // ✅ now valid
     }
   }),
   [transition, onConsentRevoked]
@@ -125,29 +141,34 @@ export const Phase6SidePanel = forwardRef<
         state={state}
         jobTitle={jobTitle}
         onAdvance={transition}
+        onRequestInterpretation={() => {
+          setRequestedScope("interpret_job_posting");
+          transition("CONSENT_REQUESTED_INTERPRETATION");
+        }}
       />
     </div>
 
     {/* ✅ Revoke button only visible after consent */}
-    {state === "CONSENT_GRANTED" && (
-      <button
-        onClick={() => {
-          setRequestedScope("read_job_posting");
-          setState("VIEWING");
-          onConsentRevoked();
-        }}
-        style={{
-          marginTop: "16px",
-          padding: "8px 12px",
-          borderRadius: "8px",
-          border: "1px solid #ddd",
-          background: "#fff",
-          cursor: "pointer",
-        }}
-      >
-        Revoke Access
-      </button>
-    )}
+    {(state === "HYDRATED" || state === "INTERPRETED") && (
+  <button
+    onClick={() => {
+      // Always revoke through controlled transition
+      setRequestedScope("hydrate");
+      transition("VIEWING");
+      onConsentRevoked();
+    }}
+    style={{
+      marginTop: "16px",
+      padding: "8px 12px",
+      borderRadius: "8px",
+      border: "1px solid #ddd",
+      background: "#fff",
+      cursor: "pointer",
+    }}
+  >
+    Revoke Access
+  </button>
+)}
   </aside>
 );
 });

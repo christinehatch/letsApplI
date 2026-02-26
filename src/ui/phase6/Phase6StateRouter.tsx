@@ -10,24 +10,14 @@ interface Phase6StateRouterProps {
   state: Phase6State;
   jobTitle: string;
   onAdvance: (next: Phase6State) => void;
+  onRequestInterpretation: () => void;
 }
 
-/**
- * Phase 6 State Router
- *
- * Responsibilities:
- * - Map Phase6State → UI component
- *
- * Explicitly forbidden:
- * - State mutation
- * - Job interpretation
- * - URL access
- * - Side effects
- */
 export function Phase6StateRouter({
-  state,
-  jobTitle,
-  onAdvance,
+                                    state,
+                                    jobTitle,
+                                    onAdvance,
+                                    onRequestInterpretation,
 }: Phase6StateRouterProps) {
   switch (state) {
     case "VIEWING":
@@ -41,10 +31,52 @@ export function Phase6StateRouter({
         />
       );
 
-    case "CONSENT_REQUESTED":
-      return <ConsentRequest onAdvance={onAdvance} />;
+    // -------------------------
+    // Hydration Consent
+    // -------------------------
+    case "CONSENT_REQUESTED_HYDRATION":
+      return (
+        <ConsentRequest
+          title="Allow reading this job listing?"
+          description="To proceed, explicit permission is required to read the job listing."
+          onConfirm={() => onAdvance("HYDRATING")}
+          onCancel={() => onAdvance("VIEWING")}
+        />
+      );
 
-    case "CONSENT_GRANTED":
+    // -------------------------
+    // Interpretation Consent
+    // -------------------------
+    case "CONSENT_REQUESTED_INTERPRETATION":
+      return (
+        <ConsentRequest
+          title="Allow structured interpretation?"
+          description="This will analyze the already-read job listing and produce a structured breakdown."
+          onConfirm={() => onAdvance("INTERPRETING")}
+          onCancel={() => onAdvance("HYDRATED")}
+        />
+      );
+
+    // -------------------------
+    // Transitional States
+    // -------------------------
+    case "HYDRATING":
+    case "INTERPRETING":
+      return <ConsentAcknowledgement />;
+
+    case "HYDRATED":
+      return (
+        <div>
+          <ConsentAcknowledgement />
+
+          <div style={{ marginTop: "16px" }}>
+            <button onClick={onRequestInterpretation}>
+              Analyze this role
+            </button>
+          </div>
+        </div>
+      );
+    case "INTERPRETED":
       return <ConsentAcknowledgement />;
 
     default:
