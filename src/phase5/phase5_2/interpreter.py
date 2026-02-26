@@ -1,19 +1,13 @@
 from typing import Optional
 from datetime import datetime
 
-from .types import (
-    InterpretationInput,
-    InterpretationResult,
-    RoleSummary,
-    RequirementsAnalysis,
-    ResumeAlignment,
-    ProjectOpportunities,
-)
+from .types import InterpretationInput
 from .errors import (
     InterpretationNotAuthorizedError,
     InvalidInputSourceError,
 )
-
+from .llm_adapter import Phase52LLMAdapter
+from .shadow_logger import log_shadow_run
 
 class Phase52Interpreter:
     """
@@ -29,6 +23,7 @@ class Phase52Interpreter:
     - This class performs NO recommendation (strategic inference will come later)
     """
 
+
     def __init__(self):
         self._input: Optional[InterpretationInput] = None
 
@@ -42,8 +37,7 @@ class Phase52Interpreter:
     # -------------------------
     # Interpretation entrypoint
     # -------------------------
-
-    def interpret(self) -> InterpretationResult:
+    def interpret(self) -> dict:
         # ---- Guard Checks ----
         if self._input is None:
             raise InterpretationNotAuthorizedError("No Phase 5.1 input provided")
@@ -56,5 +50,12 @@ class Phase52Interpreter:
                 "Interpretation requires a Phase 5.1 read timestamp"
             )
 
-        # ---- Hard Lock ----
-        raise NotImplementedError("Phase 5.2 is locked (hardening mode)")
+        # ---- LLM Execution (Authoritative) ----
+        llm_adapter = Phase52LLMAdapter()
+
+        output = llm_adapter.run(self._input.raw_content)
+
+        # ---- Structural Hash Logging ----
+        log_shadow_run(self._input.job_id, output)
+
+        return output

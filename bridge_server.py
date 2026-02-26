@@ -6,7 +6,15 @@ from pydantic import BaseModel
 from datetime import datetime
 from fastapi.responses import Response
 from urllib.parse import urlparse
-from .validator_schema import validate_schema
+from src.phase5.phase5_2.validator_schema import validate_schema
+
+from src.phase5.phase5_2.determinism import compute_structural_hash
+from src.phase5.phase5_2.interpreter import Phase52Interpreter
+from src.phase5.phase5_2.types import InterpretationInput
+from src.phase5.phase5_2.errors import (
+    InterpretationNotAuthorizedError,
+    InvalidInputSourceError,
+)
 
 # Adds the project root to the Python path so 'src' is discoverable
 sys.path.append(os.path.join(os.getcwd(), "src"))
@@ -232,15 +240,10 @@ async def handle_hydrate_job(payload: HandoffPayload):
         print(f"Bridge Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
+
+
 @app.post("/api/interpret-job")
 async def handle_interpret_job(payload: HandoffPayload):
-    """
-    Phase 5.2 Interpretation Endpoint (LOCKED)
-
-    Requires:
-    - scope == "interpret_job_posting"
-    - Explicit consent
-    """
 
     try:
         scope = payload.consent.get("scope")
@@ -251,14 +254,62 @@ async def handle_interpret_job(payload: HandoffPayload):
                 detail="This endpoint only accepts 'interpret_job_posting' scope."
             )
 
-        # Hard lock — do not unlock yet
-        raise HTTPException(
-            status_code=501,
-            detail="Phase 5.2 interpretation is not yet enabled."
+        job_id = payload.job_id
+
+        if not job_id:
+            raise HTTPException(status_code=400, detail="Missing job_id")
+
+        # 🔒 Phase 5.2 requires Phase 5.1 output.
+        # For now, we re-read via Phase 5.1 using canonical path.
+        # Later, this should use a hydration store.
+
+        from ui.read_job import get_fetcher, read_job_for_ui
+        from phase5.phase5_1.types import ConsentPayload
+
+        consent = ConsentPayload(
+            job_id=job_id,
+            scope="hydrate",
+            granted_at=datetime.utcnow()
         )
+
+        fetcher = get_fetcher(job_id)
+        read_result = read_job_for_ui(consent, fetcher)
+
+        if not read_result.content:
+            raise HTTPException(
+                status_code=400,
+                detail="Hydrated content missing"
+            )
+
+        # ---- Construct Interpretation Input ----
+
+        interpretation_input = InterpretationInput(
+            job_id=job_id,
+            raw_content=read_result.content,
+            read_at=read_result.read_at,
+        )
+
+        # ---- Execute Interpreter ----
+
+        interpreter = Phase52Interpreter()
+        interpreter.set_input(interpretation_input)
+
+        result = interpreter.interpret()
+
+        return {
+            "job_id": job_id,
+            "interpretation": result
+        }
+
+    except InterpretationNotAuthorizedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    except InvalidInputSourceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     except HTTPException:
         raise
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

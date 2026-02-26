@@ -60,18 +60,18 @@ def test_interpreter_does_not_emit_advice_or_recommendations():
 
     interpreter.set_input(input_payload)
 
-    with pytest.raises(NotImplementedError):
-        result = interpreter.interpret()
+    result = interpreter.interpret()
+    assert "recommend" not in str(result).lower()
+    assert "should" not in str(result).lower()
+    # If this ever returns, these must never appear
+    forbidden_language = [
+        "you should",
+        "recommend",
+        "fit",
+        "good match",
+        "apply",
+    ]
 
-        # If this ever returns, these must never appear
-        forbidden_language = [
-            "you should",
-            "recommend",
-            "fit",
-            "good match",
-            "apply",
-        ]
-
-        serialized = str(result).lower()
-        for phrase in forbidden_language:
-            assert phrase not in serialized
+    serialized = str(result).lower()
+    for phrase in forbidden_language:
+        assert phrase not in serialized

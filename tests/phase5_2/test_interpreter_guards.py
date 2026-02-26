@@ -38,8 +38,8 @@ def test_interpret_does_not_perform_reading_or_fetching():
 
     # We expect NotImplementedError for now,
     # but *not* any fetch/read side effects.
-    with pytest.raises(NotImplementedError):
-        interpreter.interpret()
+    result = interpreter.interpret()
+    assert result["schema_version"] == "5.2.0"
 
 
 def test_interpreter_has_no_fetch_or_read_methods():
