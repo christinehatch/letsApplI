@@ -2,37 +2,43 @@
 from __future__ import annotations
 
 from typing import List, Dict
-from discovery.store import load_jobs
-from discovery.archetypes import match_archetype
+from persistence.db import get_connection
+from persistence.repos.jobs_repo import JobsRepo
+from state import DB_PATH
+from discovery.location_filters import is_sf_bay_area
 
 
+def summarize_since(since_iso: str) -> str:
+    conn = get_connection(DB_PATH)
 
-def summarize_since(since_ts: float) -> str:
-    jobs = load_jobs()
-    from discovery.location_filters import is_sf_bay_area
+    try:
+        repo = JobsRepo(conn)
+        jobs = repo.list_new_jobs_since(since_iso)
+    finally:
+        conn.close()
 
-    new_jobs = [
-        j
-        for j in jobs
-        if j.first_seen_at > since_ts
-           and j.status == "active"
-           and is_sf_bay_area(j.location)
+    # filter Bay Area only
+    jobs = [
+        j for j in jobs
+        if j.location_raw and is_sf_bay_area(j.location_raw)
     ]
 
     by_company: Dict[str, List] = {}
-    for j in new_jobs:
+    for j in jobs:
         by_company.setdefault(j.company, []).append(j)
 
     lines = []
-    total = len(new_jobs)
+    total = len(jobs)
+
     lines.append(f"{total} new roles appeared since last check.")
     lines.append("I have not read them. Click one if you want to hydrate.")
     lines.append("")
 
     for company in sorted(by_company.keys()):
         lines.append(f"{company}:")
-        for j in sorted(by_company[company], key=lambda x: x.first_seen_at, reverse=True):
-            loc = f" — {j.location}" if j.location else ""
+
+        for j in by_company[company]:
+            loc = f" — {j.location_raw}" if j.location_raw else ""
             lines.append(f"- {j.title}{loc}")
             lines.append(f"  {j.url}")
 
