@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import argparse
-import time
+
 
 from discovery.models import Signal
 from discovery.registry import save_registry, load_registry, upsert_signal
 from discovery.loop import poll_all
 from discovery.run_state import load_last_run, save_last_run
 from discovery.summary import summarize_since
-
+from state import DB_PATH
 
 def cmd_init(_: argparse.Namespace) -> None:
     save_registry([])
@@ -38,17 +38,28 @@ def cmd_add_greenhouse(args: argparse.Namespace) -> None:
     upsert_signal(s)
     print(f"Added signal {args.signal_id}")
 
+def cmd_add_lever(args: argparse.Namespace) -> None:
+    s = Signal(
+        signal_id=args.signal_id,
+        company=args.company,
+        method="lever_job_board_api",
+        poll_interval_minutes=args.poll_interval_minutes,
+        config={"company_slug": args.company_slug},
+    )
+    upsert_signal(s)
+    print(f"Added signal {args.signal_id}")
+
 
 def cmd_poll(_: argparse.Namespace) -> None:
-    poll_all()
-    print("Poll complete. See state/signal_registry.json and state/discovered_jobs.json")
-
+    poll_all(DB_PATH)
+    print("Poll complete. Discovery results stored in SQL database.")
 
 def cmd_summary(args: argparse.Namespace) -> None:
     since = load_last_run()
     text = summarize_since(since)
     print(text)
-    save_last_run(time.time())
+    from datetime import datetime, timezone
+    save_last_run(datetime.now(timezone.utc).isoformat())
 
 
 def main() -> None:
@@ -67,6 +78,13 @@ def main() -> None:
     sp.add_argument("--board-token", required=True)
     sp.add_argument("--poll-interval-minutes", type=int, default=360)
     sp.set_defaults(func=cmd_add_greenhouse)
+
+    sp = sub.add_parser("add-lever")
+    sp.add_argument("--signal-id", required=True)
+    sp.add_argument("--company", required=True)
+    sp.add_argument("--company-slug", required=True)
+    sp.add_argument("--poll-interval-minutes", type=int, default=360)
+    sp.set_defaults(func=cmd_add_lever)
 
     sp = sub.add_parser("poll")
     sp.set_defaults(func=cmd_poll)

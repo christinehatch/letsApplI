@@ -6,12 +6,14 @@ from typing import Dict
 
 from discovery.models import Signal
 from discovery.registry import load_registry, save_registry
-from discovery.store import upsert_jobs
+from discovery.store import DiscoveryStore
 from discovery.signals.greenhouse import GreenhouseAdapter
+from discovery.signals.lever import LeverAdapter
 
 
 ADAPTERS: Dict[str, object] = {
     "greenhouse_job_board_api": GreenhouseAdapter(),
+    "lever_job_board_api": LeverAdapter(),
 }
 
 
@@ -20,10 +22,12 @@ def should_poll(signal: Signal, now: float) -> bool:
     return (now - signal.last_polled_at) >= interval_s
 
 
-def poll_all() -> None:
+def poll_all(db_path: str) -> None:
     now = time.time()
     signals = load_registry()
     updated = []
+
+    store = DiscoveryStore(db_path)
 
     for s in signals:
         if not should_poll(s, now):
@@ -36,10 +40,9 @@ def poll_all() -> None:
                 raise ValueError(f"No adapter for method={s.method}")
 
             jobs = adapter.poll(s)  # metadata-only
-            new_count, upd_count, stale_count = upsert_jobs(
+
+            new_count, upd_count = store.upsert_jobs(
                 incoming=jobs,
-                now=now,
-                mark_stale_for_signal_id=s.signal_id,
             )
 
             s2 = Signal(
@@ -49,13 +52,13 @@ def poll_all() -> None:
                 poll_interval_minutes=s.poll_interval_minutes,
                 last_polled_at=now,
                 availability="available",
-                notes=f"polled_ok new={new_count} updated={upd_count} stale={stale_count}",
+                notes=f"polled_ok new={new_count} updated={upd_count}",
                 config=s.config,
             )
+
             updated.append(s2)
 
         except Exception as e:
-            # No spoofing, no bypassing. Mark unavailable and move on.
             s2 = Signal(
                 signal_id=s.signal_id,
                 company=s.company,
@@ -69,4 +72,3 @@ def poll_all() -> None:
             updated.append(s2)
 
     save_registry(updated)
-
