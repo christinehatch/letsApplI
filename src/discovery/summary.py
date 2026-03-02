@@ -8,7 +8,10 @@ from state import DB_PATH
 from discovery.location_filters import is_sf_bay_area
 
 
-def summarize_since(since_iso: str) -> str:
+def summarize_since(
+    since_iso: str,
+    location_mode: str = "bay_area",
+) -> str:
     conn = get_connection(DB_PATH)
 
     try:
@@ -17,11 +20,19 @@ def summarize_since(since_iso: str) -> str:
     finally:
         conn.close()
 
-    # filter Bay Area only
-    jobs = [
-        j for j in jobs
-        if j.location_raw and is_sf_bay_area(j.location_raw)
-    ]
+    if location_mode == "bay_area":
+        jobs = [
+            j for j in jobs
+            if j.location_raw and is_sf_bay_area(j.location_raw)
+        ]
+    elif location_mode == "all":
+        pass
+    elif location_mode.startswith("contains:"):
+        needle = location_mode.split(":", 1)[1].lower()
+        jobs = [
+            j for j in jobs
+            if j.location_raw and needle in j.location_raw.lower()
+        ]
 
     by_company: Dict[str, List] = {}
     for j in jobs:

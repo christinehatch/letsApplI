@@ -9,12 +9,14 @@ from urllib.parse import urlparse
 from src.phase5.phase5_2.validator_schema import validate_schema
 
 from src.phase5.phase5_2.determinism import compute_structural_hash
-from src.phase5.phase5_2.interpreter import Phase52Interpreter
-from src.phase5.phase5_2.types import InterpretationInput
-from src.phase5.phase5_2.errors import (
+from phase5.phase5_2.interpreter import Phase52Interpreter
+from phase5.phase5_2.types import InterpretationInput
+from phase5.phase5_2.errors import (
     InterpretationNotAuthorizedError,
     InvalidInputSourceError,
 )
+from discovery.summary import summarize_since
+from discovery.run_state import load_last_run
 
 # Adds the project root to the Python path so 'src' is discoverable
 sys.path.append(os.path.join(os.getcwd(), "src"))
@@ -93,6 +95,8 @@ ALLOWED_PREVIEW_HOSTS = {
     "boards.greenhouse.io",
     "jobs.lever.co",
     "www.figma.com",  # optional if you want it
+    "careers.airbnb.com",   # 👈 add this
+
 }
 
 async def _render_pdf(url: str) -> bytes:
@@ -119,6 +123,63 @@ def _prune_cache(now: float) -> None:
     for k in expired:
         _preview_cache.pop(k, None)
 
+
+@app.get("/api/discovery-feed")
+async def discovery_feed(
+    location: str = Query("bay_area", description="Location filter: bay_area | all")
+):
+    from persistence.db import get_connection
+    from state import DB_PATH
+    from discovery.location_filters import is_sf_bay_area
+
+    conn = get_connection(DB_PATH)
+    try:
+        rows = conn.execute("""
+            SELECT provider_job_key, company, title, location_raw, url
+            FROM jobs
+            ORDER BY discovered_at DESC
+            LIMIT 100
+        """).fetchall()
+    finally:
+        conn.close()
+
+    jobs = [
+        {
+            "job_id": row[0],
+            "company": row[1],
+            "title": row[2],
+            "location": row[3],
+            "url": row[4],
+        }
+        for row in rows
+    ]
+
+    if location == "bay_area":
+        jobs = [
+            j for j in jobs
+            if j["location"] and is_sf_bay_area(j["location"])
+        ]
+
+    return {"jobs": jobs}
+
+@app.get("/api/discovery-summary")
+async def discovery_summary(
+    location: str = Query("bay_area", description="Location filter: bay_area | all")
+):
+    try:
+        since = load_last_run()
+
+        text = summarize_since(
+            since_iso=since,
+            location_mode=location,
+        )
+
+        return {
+            "summary": text
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/user-preview")
 async def user_preview(url: str = Query(..., description="Job listing URL")):
