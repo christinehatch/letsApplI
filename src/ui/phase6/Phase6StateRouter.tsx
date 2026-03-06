@@ -1,8 +1,7 @@
 import React from "react";
 import { Phase6State } from "./Phase6State";
 
-import { ViewingNotice } from "./states/ViewingNotice";
-import { RoleOrientation } from "./states/RoleOrientation";
+
 import { ConsentRequest } from "./states/ConsentRequest";
 import { ConsentAcknowledgement } from "./states/ConsentAcknowledgement";
 
@@ -20,66 +19,52 @@ export function Phase6StateRouter({
                                     onRequestInterpretation,
 }: Phase6StateRouterProps) {
   switch (state) {
-    case "VIEWING":
-      return <ViewingNotice onAdvance={onAdvance} />;
 
-    case "ORIENTED":
-      return (
-        <RoleOrientation
-          jobTitle={jobTitle}
-          onAdvance={onAdvance}
-        />
-      );
+  case "VIEWING":
+  return (
+    <div>
+      <p>The job posting has been loaded.</p>
 
-    // -------------------------
-    // Hydration Consent
-    // -------------------------
-    case "CONSENT_REQUESTED_HYDRATION":
-      return (
-        <ConsentRequest
-          title="Allow reading this job listing?"
-          description="To proceed, explicit permission is required to read the job listing."
-          onConfirm={() => onAdvance("HYDRATING")}
-          onCancel={() => onAdvance("VIEWING")}
-        />
-      );
+      <p>
+        You can explore the raw posting yourself, or ask me to analyze
+        the role structure.
+      </p>
 
-    // -------------------------
-    // Interpretation Consent
-    // -------------------------
-    case "CONSENT_REQUESTED_INTERPRETATION":
-      return (
-        <ConsentRequest
-          title="Allow structured interpretation?"
-          description="This will analyze the already-read job listing and produce a structured breakdown."
-          onConfirm={() => onAdvance("INTERPRETING")}
-          onCancel={() => onAdvance("HYDRATED")}
-        />
-      );
+      <p>I can extract:</p>
 
-    // -------------------------
-    // Transitional States
-    // -------------------------
-    case "HYDRATING":
-    case "INTERPRETING":
-      return <ConsentAcknowledgement />;
+      <ul>
+        <li>Explicit requirements</li>
+        <li>Capability domains</li>
+        <li>Signals about the role’s emphasis</li>
+      </ul>
 
-    case "HYDRATED":
-      return (
-        <div>
-          <ConsentAcknowledgement />
+      <p style={{ fontSize: "13px", color: "#666" }}>
+        This analysis does not evaluate you or recommend actions.
+      </p>
 
-          <div style={{ marginTop: "16px" }}>
-            <button onClick={onRequestInterpretation}>
-              Analyze this role
-            </button>
-          </div>
-        </div>
-      );
-    case "INTERPRETED":
-      return <ConsentAcknowledgement />;
+      <button onClick={onRequestInterpretation}>
+        Analyze Role
+      </button>
+    </div>
+  );
 
-    default:
+  case "CONSENT_REQUESTED_INTERPRETATION":
+    return (
+      <ConsentRequest
+        title="Analyze this role?"
+        description="This will analyze the job posting and extract requirements and capability signals."
+        onConfirm={() => onAdvance("INTERPRETING")}
+        onCancel={() => onAdvance("VIEWING")}
+      />
+    );
+
+  case "INTERPRETING":
+    return <p>Analyzing role…</p>;
+
+  case "INTERPRETED":
+    return <ConsentAcknowledgement />;
+
+  default:
       return (
         <div>
           Unknown Phase 6 state: <code>{state}</code>

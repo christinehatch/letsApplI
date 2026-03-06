@@ -20,22 +20,22 @@ interface ViewingNoticeProps {
 export function ViewingNotice({ onAdvance }: ViewingNoticeProps) {
   return (
     <div style={{ padding: "16px" }}>
-      <h3>You are viewing a job listing</h3>
+      <h3>Job posting loaded</h3>
 
       <p>
-        I have <strong>not</strong> read this job posting.
+        The system has loaded this job listing so you can read it.
       </p>
 
       <p>
-        I can help explain what roles like this are generally about — without
-        looking at this listing — if you want.
+        If you'd like, I can analyze the role to extract requirements and
+        capability signals.
       </p>
 
       <button
-        onClick={() => onAdvance("ORIENTED")}
+        onClick={() => onAdvance("CONSENT_REQUESTED_INTERPRETATION")}
         style={{ marginTop: "12px" }}
       >
-        Explain this type of role
+        Analyze role
       </button>
     </div>
   );

@@ -9,15 +9,13 @@ import { PhaseHeader } from "./PhaseHeader";
 import { Phase6StateRouter } from "./Phase6StateRouter";
 
 export type Phase6SidePanelHandle = {
-  requestHydration: () => void;
   requestInterpretation: () => void;
-  completeHydration: () => void;        // ✅ add
-  completeInterpretation: () => void;   // future use
+  completeInterpretation: () => void;
   reset: () => void;
   revoke: () => void;
 };
 
-type ConsentScope = "hydrate" | "interpret_job_posting";
+type ConsentScope = "interpret_job_posting";
 
 export interface Phase6SidePanelProps {
   jobId: string;
@@ -62,17 +60,17 @@ export const Phase6SidePanel = forwardRef<
 
   // ✅ NEW: Phase 6 is now the single place that decides what scope is being requested.
   const [requestedScope, setRequestedScope] =
-  useState<ConsentScope>("hydrate");
+  useState<ConsentScope>("interpret_job_posting");
 
   const transition = useCallback(
   (to: Phase6State) => {
-    assertValidTransition(state, to);
+    setState(prev => {
+      assertValidTransition(prev, to);
+      return to;
+    });
 
-    // First update local state
-    setState(to);
-
-    // Then trigger authority handoff AFTER state update
-    if (to === "HYDRATING" || to === "INTERPRETING") {
+    // Fire consent ONLY when entering INTERPRETING
+    if (to === "INTERPRETING") {
       onConsentGranted({
         job_id: jobId,
         consent: {
@@ -83,40 +81,40 @@ export const Phase6SidePanel = forwardRef<
       });
     }
   },
-  [state, jobId, onConsentGranted, requestedScope]
+  [jobId, onConsentGranted, requestedScope]
 );
+
 
   // ✅ NEW: App.tsx can only *ask Phase 6* to start a consent flow.
   // It cannot construct payloads or scopes.
   useImperativeHandle(
   ref,
   () => ({
-    requestHydration: () => {
-      setRequestedScope("hydrate");
-      transition("CONSENT_REQUESTED_HYDRATION");
-    },
 
     requestInterpretation: () => {
       setRequestedScope("interpret_job_posting");
       transition("CONSENT_REQUESTED_INTERPRETATION");
     },
-    completeHydration: () => {
-      transition("HYDRATED");
-    },
+
 
     completeInterpretation: () => {
-      transition("INTERPRETED");
+      setState(prev => {
+        if (prev === "INTERPRETING") {
+          assertValidTransition(prev, "INTERPRETED");
+          return "INTERPRETED";
+        }
+        return prev;
+      });
     },
 
     reset: () => {
-      setRequestedScope("hydrate");
-      transition("VIEWING");
+      setState("VIEWING");
     },
 
     revoke: () => {
-        setRequestedScope("hydrate");
-        transition("VIEWING");
-        onConsentRevoked();   // ✅ now valid
+      setRequestedScope("interpret_job_posting");
+      setState("VIEWING");
+      onConsentRevoked();
     }
   }),
   [transition, onConsentRevoked]
@@ -149,11 +147,11 @@ export const Phase6SidePanel = forwardRef<
     </div>
 
     {/* ✅ Revoke button only visible after consent */}
-    {(state === "HYDRATED" || state === "INTERPRETED") && (
+    {(state === "INTERPRETING" || state === "INTERPRETED") && (
   <button
     onClick={() => {
       // Always revoke through controlled transition
-      setRequestedScope("hydrate");
+      setRequestedScope("interpret_job_posting");
       transition("VIEWING");
       onConsentRevoked();
     }}
