@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
 from src.ui.read_job import read_job_for_ui
 from src.phase5.phase5_1.types import ConsentPayload
+import pytest
 
-
-def test_ui_adapter_returns_read_result_verbatim():
-    def fake_fetch():
+@pytest.mark.asyncio
+async def test_ui_adapter_returns_read_result_verbatim():
+    async def fake_fetch():
         return "RAW JOB CONTENT"
 
     consent = ConsentPayload(
@@ -14,7 +15,7 @@ def test_ui_adapter_returns_read_result_verbatim():
         revocable=True,
     )
 
-    result = read_job_for_ui(consent, fake_fetch)
+    result = await read_job_for_ui(consent, fake_fetch)
 
     assert result.content == "RAW JOB CONTENT"
     assert result.source.availability == "available"

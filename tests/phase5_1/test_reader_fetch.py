@@ -5,8 +5,8 @@ import pytest
 from src.phase5.phase5_1.reader import Phase51Reader
 from src.phase5.phase5_1.types import ConsentPayload
 
-
-def test_read_with_valid_consent_calls_fetch_once():
+@pytest.mark.asyncio
+async def test_read_with_valid_consent_calls_fetch_once():
     calls = {"count": 0}
 
     def fake_fetch():
@@ -24,7 +24,7 @@ def test_read_with_valid_consent_calls_fetch_once():
 
     reader.set_consent(consent)
 
-    reader.read()
+    await reader.read()
 
     assert calls["count"] == 1
 

@@ -2,37 +2,44 @@
 import os
 from phase5.phase5_1.reader import Phase51Reader
 from phase5.phase5_1.types import ReadResult
+# src/ui/read_job.py
+from typing import Callable
+from urllib.parse import urlparse
+import asyncio
 
-def get_fetcher(job_id: str):
-    def fetch_job_content() -> str:
-        # Use absolute path to avoid "where am I?" confusion
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        file_path = os.path.join(base_dir, "job.txt")
+from playwright.async_api import async_playwright
 
-        print(f"\n--- [CHECKPOINT 1: DISCOVERY] ---")
-        print(f"Targeting path: {file_path}")
 
+def get_fetcher(job_id: str, job_url: str) -> Callable[[], asyncio.Future]:    """
+    Returns a synchronous wrapper that fetches visible page text using Playwright.
+    """
+
+
+def get_fetcher(job_id: str, job_url: str):
+    async def fetch_async() -> str:
         try:
-            if not os.path.exists(file_path):
-                print(f"!!! ERROR: job.txt does not exist at that location.")
-                return ""
+            async with async_playwright() as p:
+                browser = await p.chromium.launch()
+                page = await browser.new_page()
 
-            with open(file_path, "r") as f:
-                content = f.read()
-                print(f"SUCCESS: Read {len(content)} characters from job.txt")
-                # Print the first 50 chars to be sure
-                print(f"PREVIEW: {content[:50]}...")
-                return content
+                await page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
+                await page.wait_for_timeout(800)
+
+                text = await page.evaluate(
+                    "() => document.body.innerText"
+                )
+
+                await browser.close()
+
+                return text.strip() if text else ""
+
         except Exception as e:
-            print(f"!!! SYSTEM ERROR: {str(e)}")
+            print(f"[FETCH ERROR] {str(e)}")
             return ""
 
-    return fetch_job_content
+    return fetch_async
 
-    # src/ui/read_job.py
-
-
-def read_job_for_ui(consent, fetch_job_content) -> ReadResult:
+async def read_job_for_ui(consent, fetch_job_content) -> ReadResult:
     """Standard Phase 5.1 Entrypoint—Does not interpret or persist."""
 
     # --- [AUTHORITY VALIDATION] ---
@@ -49,4 +56,4 @@ def read_job_for_ui(consent, fetch_job_content) -> ReadResult:
     # If Phase51Reader.set_consent still fails, we'll need to
     # check that specific file, but this usually unblocks the flow.
     reader.set_consent(consent)
-    return reader.read()
+    return await reader.read()

@@ -39,8 +39,8 @@ class Phase51Reader:
     # -------------------------
     # Read entrypoint
     # -------------------------
+    async def read(self) -> ReadResult:
 
-    def read(self) -> ReadResult:
         # ---- Consent must exist ----
         if self._consent is None:
             raise NotAuthorizedError("No consent provided")
@@ -65,7 +65,7 @@ class Phase51Reader:
         self._fetch_call_count += 1
 
         try:
-            content = self._fetch_job_content()
+            content = await self._fetch_job_content()
             availability = "available"
         except Exception:
             content = None

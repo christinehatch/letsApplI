@@ -5,7 +5,8 @@ from src.phase5.phase5_1.reader import Phase51Reader
 from src.phase5.phase5_1.types import ConsentPayload
 
 
-def test_read_unavailable_source_returns_unavailable_result():
+@pytest.mark.asyncio
+async def test_read_unavailable_source_returns_unavailable_result():
     """
     INV-5.1-READ-003
     If the source is unavailable, Phase 5.1 must:
@@ -28,7 +29,7 @@ def test_read_unavailable_source_returns_unavailable_result():
 
     reader.set_consent(consent)
 
-    result = reader.read()
+    result = await reader.read()
 
     assert result.job_id == "job-404"
     assert result.content is None

@@ -8,7 +8,8 @@ from src.phase5.phase5_1.errors import (
     InvalidScopeError,
 )
 
-def test_read_without_consent_raises_not_authorized():
+@pytest.mark.asyncio
+async def test_read_without_consent_raises_not_authorized():
     """
     INV-5.1-CONSENT-001
     Reading must not occur without explicit consent.
@@ -16,8 +17,10 @@ def test_read_without_consent_raises_not_authorized():
     reader = Phase51Reader()
 
     with pytest.raises(NotAuthorizedError):
-        reader.read()
-def test_read_with_wrong_scope_raises_invalid_scope():
+        await reader.read()
+
+@pytest.mark.asyncio
+async def test_read_with_wrong_scope_raises_invalid_scope():
     """
     INV-5.1-CONSENT-002
     Consent scope must be exactly 'read_job_posting'.
@@ -34,7 +37,7 @@ def test_read_with_wrong_scope_raises_invalid_scope():
     reader.set_consent(consent)
 
     with pytest.raises(InvalidScopeError):
-        reader.read()
+        await reader.read()
 
 def test_read_does_not_return_content_when_not_authorized():
     """
