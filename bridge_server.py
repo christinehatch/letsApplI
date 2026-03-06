@@ -276,8 +276,24 @@ async def handle_hydrate_job(payload: HandoffPayload):
                 detail="Invalid job_id components."
             )
 
-        fetcher = get_fetcher(consent.job_id)
-        read_result = read_job_for_ui(consent, fetcher)
+        from persistence.db import get_connection
+        from state import DB_PATH
+
+        # Lookup job URL from DB
+        conn = get_connection(DB_PATH)
+        row = conn.execute(
+            "SELECT url FROM jobs WHERE provider_job_key = ?",
+            (consent.job_id,)
+        ).fetchone()
+        conn.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Job not found.")
+
+        job_url = row[0]
+
+        fetcher = get_fetcher(consent.job_id, job_url)
+        read_result = await read_job_for_ui(consent, fetcher)
 
         raw_availability = read_result.source.availability
         if raw_availability not in {"available", "unavailable"}:
@@ -320,12 +336,9 @@ async def handle_interpret_job(payload: HandoffPayload):
         if not job_id:
             raise HTTPException(status_code=400, detail="Missing job_id")
 
-        # 🔒 Phase 5.2 requires Phase 5.1 output.
-        # For now, we re-read via Phase 5.1 using canonical path.
-        # Later, this should use a hydration store.
-
-        from ui.read_job import get_fetcher, read_job_for_ui
         from phase5.phase5_1.types import ConsentPayload
+        from persistence.db import get_connection
+        from state import DB_PATH
 
         consent = ConsentPayload(
             job_id=job_id,
@@ -333,8 +346,25 @@ async def handle_interpret_job(payload: HandoffPayload):
             granted_at=datetime.utcnow()
         )
 
-        fetcher = get_fetcher(job_id)
-        read_result = read_job_for_ui(consent, fetcher)
+        # Lookup job URL
+        conn = get_connection(DB_PATH)
+        row = conn.execute(
+            "SELECT url FROM jobs WHERE provider_job_key = ?",
+            (job_id,)
+        ).fetchone()
+        conn.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Job not found.")
+
+        job_url = row[0]
+
+        fetcher = get_fetcher(job_id, job_url)
+        read_result = await read_job_for_ui(consent, fetcher)
+
+        print("---- INTERPRET DEBUG ----")
+        print("Content length:", len(read_result.content) if read_result.content else 0)
+        print("--------------------------")
 
         if not read_result.content:
             raise HTTPException(
@@ -342,15 +372,11 @@ async def handle_interpret_job(payload: HandoffPayload):
                 detail="Hydrated content missing"
             )
 
-        # ---- Construct Interpretation Input ----
-
         interpretation_input = InterpretationInput(
             job_id=job_id,
             raw_content=read_result.content,
             read_at=read_result.read_at,
         )
-
-        # ---- Execute Interpreter ----
 
         interpreter = Phase52Interpreter()
         interpreter.set_input(interpretation_input)
@@ -373,7 +399,6 @@ async def handle_interpret_job(payload: HandoffPayload):
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
 
 if __name__ == "__main__":
     import uvicorn

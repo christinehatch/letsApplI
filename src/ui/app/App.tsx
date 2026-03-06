@@ -44,49 +44,73 @@ useEffect(() => {
 }, []);
 
   // --- Handlers ---
-  const handleJobSelect = (job: any) => {
-    setSelectedJob(job);
-    // CRITICAL: Reset hydration when switching jobs to maintain the "Wall"
-    setHydratedContent(null);
-    setRequirements([]);
-    setView('raw');
-    setUserPreviewUrl(null);
+ const handleJobSelect = (job: any) => {
+  setSelectedJob(job);
+  setHydratedContent(null);
+  setRequirements([]);
+  setView("raw");
+  setUserPreviewUrl(null);
+};
 
-    phase6Ref.current?.reset();
+useEffect(() => {
+  if (!selectedJob) return;
+
+  const run = async () => {
+    // wait one microtask to ensure mount
+    await Promise.resolve();
+
+    if (!phase6Ref.current) return;
+
+    phase6Ref.current.reset();
+
+    const hydratePayload = {
+      job_id: selectedJob.id,
+      consent: {
+        granted: true,
+        scope: "hydrate",
+        granted_at: new Date().toISOString(),
+      },
+    };
+
+    await handleHydration(hydratePayload);
   };
 
-  const handleConsentRevoked = () => {
-    setHydratedContent(null);
-    setRequirements([]);
-    setView("raw");
-    setUserPreviewUrl(null);
+  run();
+
+}, [selectedJob]);
+
+  const handleConsentRevoked = async () => {
+  setRequirements([]);
+  setView("raw");
+
+  if (!selectedJob) return;
+
+  const hydratePayload = {
+    job_id: selectedJob.id,
+    consent: {
+      granted: true,
+      scope: "hydrate",
+      granted_at: new Date().toISOString(),
+    },
   };
+
+  await handleHydration(hydratePayload);
+};
  const handleConsentHandoff = async (payload: any) => {
   console.log("Phase 6 Handoff Emitted:", payload);
 
   const scope = payload?.consent?.scope;
 
-  if (!scope) {
-    console.error("Missing consent scope.");
-    return;
-  }
+  if (!scope) return;
 
-  if (scope === "hydrate") {
-    await handleHydration(payload);
-    return;
-  }
 
   if (scope === "interpret_job_posting") {
     await handleInterpretation(payload);
-    return;
   }
-
-  console.error("Unknown consent scope:", scope);
 };
 
  const handleHydration = async (payload: any) => {
   setIsReading(true);
-
   try {
     const response = await fetch(
       "http://localhost:8000/api/hydrate-job",
@@ -108,7 +132,7 @@ useEffect(() => {
       setView("raw");
 
       console.log("Phase 5.1 Hydration complete.");
-      phase6Ref.current?.completeHydration();
+
     }
   } catch (error) {
     console.error("Hydration failed:", error);
@@ -161,6 +185,58 @@ const contentBoxStyle = {
   padding: "24px", border: "1px solid #0070f3", borderRadius: "12px",
   backgroundColor: "#fff", boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
 };
+
+const articleStyle: React.CSSProperties = {
+  maxWidth: "720px",
+  margin: "0 auto",
+  lineHeight: 1.6,
+  fontSize: "16px",
+  color: "#222",
+};
+
+const renderJobContent = (content: string) => {
+  const lines = content.split("\n");
+
+  return (
+    <div style={articleStyle}>
+      {lines.map((line, index) => {
+        const trimmed = line.trim();
+
+        // Empty line = vertical spacing
+        if (!trimmed) {
+          return <div key={index} style={{ height: "16px" }} />;
+        }
+
+        // Treat short standalone lines as section headers
+        if (
+          trimmed.length < 80 &&
+          !trimmed.endsWith(".") &&
+          trimmed.split(" ").length < 8
+        ) {
+          return (
+            <h2
+              key={index}
+              style={{
+                marginTop: "32px",
+                fontSize: "20px",
+                fontWeight: 600,
+              }}
+            >
+              {trimmed}
+            </h2>
+          );
+        }
+
+        return (
+          <p key={index} style={{ marginBottom: "12px" }}>
+            {trimmed}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
+
   return (
       <div style={{
           display: "flex",
@@ -262,122 +338,66 @@ const contentBoxStyle = {
                           </div>
                       )}
 
-
+                      <div style={{marginBottom: "16px"}}>
+                          <a
+                              href={selectedJob.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                  padding: "10px 16px",
+                                  borderRadius: "8px",
+                                  border: "1px solid #ddd",
+                                  color: "#333",
+                                  textDecoration: "none",
+                                  fontWeight: 600,
+                                  background: "#fff"
+                              }}
+                          >
+                              View on Company Site
+                          </a>
+                      </div>
                       {!hydratedContent ? (
-                          /* The Choice Gate - Structural Honesty */
-                          <div style={{
-                              textAlign: "center",
-                              padding: "60px",
-                              backgroundColor: "#fff", borderRadius: "12px", border: "1px solid #eee"
-                          }}>
-                              <h2 style={{color: "#333"}}>{selectedJob.title} at {selectedJob.company}</h2>
-                              <p style={{color: "#666", marginBottom: "32px"}}>How would you like to explore this
-                                  role?</p>
-
-                              <div style={{display: "flex", gap: "20px", justifyContent: "center"}}>
-                                  <button
-                                      onClick={() => {
-                                          setUserPreviewUrl(selectedJob.url);
-                                          setPreviewVersion(v => v + 1);
-                                      }}
-                                      style={{
-                                          padding: "16px 24px",
-                                          borderRadius: "8px",
-                                          border: "1px solid #ddd",
-                                          color: "#333",
-                                          background: "#fff",
-                                          cursor: "pointer",
-                                          fontWeight: "bold"
-                                      }}
-                                  >
-                                      Preview in App (User-only)
-                                      <div style={{
-                                          fontWeight: "normal",
-                                          fontSize: "12px",
-                                          marginTop: "4px",
-                                          color: "#666"
-                                      }}>
-                                          Opens the live listing here. The system still has not read it.
-                                      </div>
-                                  </button>
-
-                                  <button
-                                      onClick={() => {
-                                          phase6Ref.current?.requestHydration();
-                                      }}
-                                      style={{
-                                          padding: "16px 24px",
-                                          borderRadius: "8px",
-                                          backgroundColor: "#0070f3",
-                                          color: "#fff",
-                                          border: "none",
-                                          cursor: "pointer",
-                                          fontWeight: "bold"
-                                      }}
-                                  >
-                                      Explore Together
-                                      <div style={{
-                                          fontWeight: "normal",
-                                          fontSize: "12px",
-                                          marginTop: "4px",
-                                          opacity: 0.9
-                                      }}>
-                                          I will fetch and display the job posting here. Interpretation requires
-                                          explicit consent in the right panel.
-                                      </div>
-                                  </button>
-
-
-                                  <a
-                                      href={selectedJob.url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      style={{
-                                          padding: "16px 24px",
-                                          borderRadius: "8px",
-                                          border: "1px solid #ddd",
-                                          color: "#333",
-                                          textDecoration: "none",
-                                          fontWeight: "bold"
-                                      }}
-                                  >
-                                      View on Company Site
-                                      <div style={{
-                                          fontWeight: "normal",
-                                          fontSize: "12px",
-                                          marginTop: "4px",
-                                          color: "#666"
-                                      }}>
-                                          Open the live listing in a new tab.
-                                      </div>
-                                  </a>
-                              </div>
+                          <div style={{textAlign: "center", padding: "60px"}}>
+                              <h2>{selectedJob.title} at {selectedJob.company}</h2>
+                              <p style={{color: "#666"}}>Loading job content…</p>
                           </div>
                       ) : (
+
                           /* Hydrated Analysis View (Phase 5.1 & 5.2) */
                           <div style={{marginTop: "24px"}}>
                               <div style={{display: "flex", gap: "10px", marginBottom: "16px"}}>
-                                  <button disabled style={{opacity: 0.4}}>
-                                      Structured Interpretation (Disabled)
+
+                                  <button
+                                      disabled={requirements.length === 0}
+                                      onClick={() => setView("structured")}
+                                      style={{
+                                          ...tabStyle(view === "structured"),
+                                          opacity: requirements.length === 0 ? 0.4 : 1,
+                                          cursor: requirements.length === 0 ? "not-allowed" : "pointer"
+                                      }}
+                                  >
+                                      {requirements.length === 0
+                                          ? "Structured Interpretation (Disabled)"
+                                          : "Structured Interpretation (5.2)"}
                                   </button>
-                                  <button onClick={() => setView('raw')} style={tabStyle(view === 'raw')}>
+
+                                  <button
+                                      onClick={() => setView("raw")}
+                                      style={tabStyle(view === "raw")}
+                                  >
                                       Raw Content (5.1)
                                   </button>
-                              </div>
 
+                              </div>
                               <div style={contentBoxStyle}>
                                   {view === 'raw' ? (
-                                      /* PHASE 5.1: The Raw Artifact - Validated by the 'hydrate' scope */
-                                      <pre style={{whiteSpace: "pre-wrap", fontSize: "14px", color: "#333"}}>
-        {hydratedContent}
-      </pre>
+                                      hydratedContent ? renderJobContent(hydratedContent) : null
                                   ) : (
-                                      /* PHASE 5.2: Interpretation - Gated until 'read_job_posting' authority is granted */
                                       requirements.length > 0 ? (
                                           <ul style={{paddingLeft: "20px"}}>
                                               {requirements.map((req, i) => (
                                                   <li key={i} style={{marginBottom: "12px"}}>
-                                                      <div style={{fontWeight: 600}}>
+                                                  <div style={{fontWeight: 600}}>
                                                           {req.requirement_text}
                                                       </div>
                                                       <div style={{fontSize: "12px", color: "#666"}}>
@@ -395,7 +415,6 @@ const contentBoxStyle = {
                                               </p>
                                           </div>
                                       )
-
                                   )}
                               </div>
                           </div>
@@ -406,23 +425,23 @@ const contentBoxStyle = {
 
           {/* 3. Authority SidePanel (Right) */}
           {selectedJob && (
-  <div style={{
-    width: "360px",
-    borderLeft: "1px solid #eee",
-    backgroundColor: "#fff",
-    height: "100vh",
-    overflowY: "auto"   // 🔥 independent scroll
-  }}>
-    <Phase6SidePanel
-      ref={phase6Ref}
-      jobId={selectedJob.id}
-      jobTitle={selectedJob.title}
-      onConsentGranted={handleConsentHandoff}
-      onConsentRevoked={handleConsentRevoked}
-    />
-  </div>
-)}
+              <div style={{
+                  width: "360px",
+                  borderLeft: "1px solid #eee",
+                  backgroundColor: "#fff",
+                  height: "100vh",
+                  overflowY: "auto"   // 🔥 independent scroll
+              }}>
+                  <Phase6SidePanel
+                      ref={phase6Ref}
+                      jobId={selectedJob.id}
+                      jobTitle={selectedJob.title}
+                      onConsentGranted={handleConsentHandoff}
+                      onConsentRevoked={handleConsentRevoked}
+                  />
+              </div>
+          )}
 
- </div>
+      </div>
   );
 }
