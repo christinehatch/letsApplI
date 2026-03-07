@@ -9,6 +9,8 @@ type Job = {
   title: string;
   location?: string;
   url?: string;
+  posted_at?: string | null;
+  provider?: string;
 };
 
 type FeedSidebarProps = {

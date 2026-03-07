@@ -137,7 +137,7 @@ class JobsRepo:
 
         rows = self.conn.execute(
             f"""
-            SELECT provider_job_key, company, title, location_raw, url
+            SELECT provider_job_key, company, title, location_raw, url, posted_at, provider
             FROM jobs
             WHERE {' AND '.join(where)}
             ORDER BY discovered_at DESC
@@ -156,6 +156,8 @@ class JobsRepo:
                     "title": row[2],
                     "location": row[3],
                     "url": row[4],
+                    "posted_at": row[5],
+                    "provider": row[6],
                 }
             )
         return jobs, total_jobs

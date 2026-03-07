@@ -6,6 +6,8 @@ type Job = {
   company: string;
   title: string;
   location?: string;
+  posted_at?: string | null;
+  provider?: string;
 };
 
 type JobListProps = {

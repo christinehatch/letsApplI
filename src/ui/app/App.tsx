@@ -52,6 +52,8 @@ useEffect(() => {
           company: j.company,
           location: j.location,
           url: j.url,
+          posted_at: j.posted_at,
+          provider: j.provider,
         }))
       );
     } catch (err) {
