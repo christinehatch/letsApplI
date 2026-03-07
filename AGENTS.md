@@ -1,81 +1,61 @@
 # AGENTS.md
 
-This file defines repository-specific guidance for AI coding agents (ChatGPT/Codex) working in `letsApplI`.
+## System Overview
 
-## Mission
+letsA(ppl)I is a deterministic, consent-first job discovery and analysis system.
 
-Build and evolve a human-in-the-loop job application support tool with explicit guardrails:
-- Read-only discovery/hydration of job postings.
-- Deterministic interpretation and fit surfacing.
-- No auto-apply, no impersonation, no hidden authority.
+Core flow:
 
-## Architecture Snapshot
+Discovery
+→ Hydration
+→ Structured Interpretation
+→ Personal Job Pipeline
 
-- Python backend and orchestration in `src/`.
-- FastAPI bridge server in `bridge_server.py`.
-- Discovery CLI entrypoint in `main.py`.
-- Phase 5 CLI entrypoint in `phase5_main.py`.
-- React + Vite UI in `src/ui/app` and `src/ui/phase6`.
-- SQLite persistence in `state/letsappli_v1.sqlite3` via `src/persistence/`.
+The architecture deliberately separates responsibilities:
 
-## High-Value Paths
+- Discovery: finding jobs
+- Hydration: reading jobs
+- Interpretation: understanding jobs
+- User pipeline: tracking applications
 
-- `src/discovery/`: signal registry, polling loop, summaries.
-- `src/phase5/phase5_1`: controlled job hydration.
-- `src/phase5/phase5_2`: interpretation pipeline and validators.
-- `src/phase5/phase5_3`: fit analysis and safety guards.
-- `src/persistence/`: migrations, DB helpers, repositories.
-- `tests/`: behavior and invariant coverage.
-- `docs/`: phase contracts, locks, and checklists.
+Agents must not merge these responsibilities.
 
-## Local Dev Commands
+## Architectural Principles
 
-- Install Python deps: `pip install -r requirements-dev.txt`
-- Install Node deps: `npm install`
-- Run backend API: `python bridge_server.py`
-- Run discovery CLI: `python main.py <subcommand>`
-- Run phase5 CLI: `python phase5_main.py --help`
-- Run UI: `npm run dev`
-- Run tests: `pytest -q`
+AI agents must follow these rules:
 
-## Invariants To Preserve
+- Deterministic architecture is preferred over automation.
+- No background AI actions.
+- All analysis must be user-initiated.
+- Hydration and interpretation are separate steps.
+- Interpreter outputs are untrusted and must be validated.
+- No candidate evaluation or job-fit scoring.
 
-- Keep human approval explicit at all decision points.
-- Avoid introducing autonomous actions (especially apply/submit behavior).
-- Preserve deterministic behavior where contracts require it (see Phase 5.2 docs/tests).
-- Maintain read-only posture for external job sources.
-- Add tests for behavior changes, especially around consent/authorization and validation guards.
+The system focuses on role understanding, not applicant ranking.
 
-### Authority and Consent Boundaries
+## Current Milestone Status
 
-- Hydration (Phase 5.1) must only occur with explicit user authorization.
-- Interpretation (Phase 5.2) must never execute automatically after hydration.
-- Interpretation must only occur when Phase 6 emits explicit consent.
+- Milestone 1 — Job Discovery (Complete)
+- Milestone 2 — Job Hydration (Complete)
+- Milestone 3 — Job State Persistence (Complete)
+- Milestone 4 — Pipeline UI / Kanban (Complete)
+- Milestone 5 — Structured Job Interpretation (Next)
 
-No component may implicitly escalate authority across phases.
+Agents implementing Milestone 5 should add:
 
-### Artifact Discipline
+- `Phase52Interpreter`
+- `Phase52Validator`
+- `job_interpretations` persistence
+- interpretation API endpoint
+- UI rendering of structured role analysis
 
-All analysis must operate on explicit artifacts.
+## Boundaries
 
-Valid artifacts include:
+Agents must NOT:
 
-- Hydrated job content (Phase 5.1)
-- Structured interpretation output (Phase 5.2)
-- Fit signals (Phase 5.3)
+- automatically analyze jobs
+- generate career advice
+- evaluate candidate fit
+- alter pipeline states automatically
 
-Agents must not introduce reasoning that bypasses these artifacts.
-
-## Working Style Expectations
-
-- Prefer minimal, targeted edits over broad rewrites.
-- Update or add docs when changing contracts or phase behavior.
-- When changing bridge endpoints, verify both backend tests and UI integration assumptions.
-- Respect existing checklists and lock docs in `docs/` before widening scope.
-
-## Done Criteria For Agent Changes
-
-- Relevant tests pass locally (`pytest -q` at minimum).
-- New behavior is covered by tests in `tests/`.
-- Any contract change is reflected in docs.
-- No secrets committed; use `.env` and `.env.example`.
+All interpretation must be explicitly triggered by the user.

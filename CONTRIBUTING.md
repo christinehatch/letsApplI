@@ -1,65 +1,43 @@
 # Contributing
 
-## Scope
+## Development Workflow
 
-This repository prioritizes human-in-the-loop workflows for job discovery and application support. Contributions must preserve explicit user control and safety constraints.
+### Development stack
 
-## Setup
+Backend:
 
-1. Create and activate a Python virtual environment.
-2. Install Python dependencies:
-   ```bash
-   pip install -r requirements-dev.txt
-   ```
-3. Install UI dependencies:
-   ```bash
-   npm install
-   ```
-4. Install Playwright browser binaries (required for hydration/preview paths):
-   ```bash
-   playwright install chromium
-   ```
+- FastAPI
+- SQLite persistence
+- Repository pattern
 
-## Run Locally
+Frontend:
 
-1. Backend API:
-   ```bash
-   python bridge_server.py
-   ```
-2. Frontend UI:
-   ```bash
-   npm run dev
-   ```
-3. Discovery CLI examples:
-   ```bash
-   python main.py init
-   python main.py list
-   python main.py poll
-   python main.py summary
-   ```
+- React + Vite
+- Three-pane layout
+- `FeedSidebar`
+- Job detail panel
+- `Phase6SidePanel`
 
-## Testing
+### Key conventions
 
-- Run all tests:
-  ```bash
-  pytest -q
-  ```
-- Prefer adding tests in the same domain folder as the changed module:
-  - `tests/phase5_1`
-  - `tests/phase5_2`
-  - `tests/phase5_3`
-  - `tests/ui`
+- Repositories are deterministic artifact stores.
+- Repositories never interpret job content.
+- LLM outputs must pass validator checks.
+- New migrations go in `migrations/`.
 
-## Pull Request Expectations
+### Testing
 
-- Keep changes scoped and intentional.
-- Preserve safety and consent gates.
-- Include tests for behavior changes.
-- Update docs when contracts or phase boundaries change.
-- Avoid adding hidden inference or authority in model-facing logic.
+Run before committing:
 
-## Coding Notes
+```bash
+pytest -q
+```
 
-- Python import paths are expected to work from repo root (`main.py`/`phase5_main.py` add `src` to `sys.path`).
-- Use existing repository abstractions in `src/persistence/repos/` rather than direct SQL spread across modules.
-- Keep source integrations read-only.
+All tests must pass before committing.
+
+### Commit structure
+
+Prefer milestone-scoped commits, for example:
+
+- `Milestone 4 — Pipeline UI`
+- `Milestone 5 — Interpretation Engine`
