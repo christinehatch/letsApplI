@@ -46,3 +46,35 @@ This memory:
 - Can be reset at any time by deleting the state file
 
 No user behavior, preferences, or actions are recorded.
+
+## Quickstart
+
+1. Install Python dependencies:
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+2. Install UI dependencies:
+   ```bash
+   npm install
+   ```
+3. Install Playwright browser:
+   ```bash
+   python -m playwright install chromium
+   ```
+4. Run backend bridge API:
+   ```bash
+   python bridge_server.py
+   ```
+5. Run UI:
+   ```bash
+   npm run dev
+   ```
+
+## Developer Support Files
+
+- `AGENTS.md`: repo-specific instructions for AI coding agents.
+- `CONTRIBUTING.md`: contributor workflow and expectations.
+- `docs/REPO_MAP.md`: module-level map of architecture and entrypoints.
+- `.env.example`: environment variable template.
+- `requirements-dev.txt`: Python development dependencies.
+- `Makefile`: common setup/run/test commands.

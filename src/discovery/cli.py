@@ -9,6 +9,7 @@ from discovery.registry import save_registry, load_registry, upsert_signal
 from discovery.loop import poll_all
 from discovery.run_state import load_last_run, save_last_run
 from discovery.summary import summarize_since
+from discovery.company_registry import seeded_signals
 from state import DB_PATH
 
 def cmd_init(_: argparse.Namespace) -> None:
@@ -62,6 +63,29 @@ def cmd_summary(args: argparse.Namespace) -> None:
     save_last_run(datetime.now(timezone.utc).isoformat())
 
 
+def cmd_seed_registry(args: argparse.Namespace) -> None:
+    seeds = seeded_signals(
+        provider=args.provider,
+        poll_interval_minutes=args.poll_interval_minutes,
+    )
+
+    if args.replace:
+        save_registry(seeds)
+        print(
+            f"Seeded registry with {len(seeds)} signals "
+            f"(provider={args.provider}, replace=True)."
+        )
+        return
+
+    for signal in seeds:
+        upsert_signal(signal)
+
+    print(
+        f"Upserted {len(seeds)} seeded signals "
+        f"(provider={args.provider}, replace=False)."
+    )
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="letsApplI discovery")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -93,10 +117,19 @@ def main() -> None:
 
     sp.set_defaults(func=cmd_summary)
 
+    sp = sub.add_parser("seed-registry")
+    sp.add_argument(
+        "--provider",
+        choices=["all", "greenhouse", "lever"],
+        default="all",
+    )
+    sp.add_argument("--poll-interval-minutes", type=int, default=360)
+    sp.add_argument("--replace", action="store_true")
+    sp.set_defaults(func=cmd_seed_registry)
+
     args = p.parse_args()
     args.func(args)
 
 
 if __name__ == "__main__":
     main()
-
