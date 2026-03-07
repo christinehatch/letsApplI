@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Phase6SidePanel, type Phase6SidePanelHandle } from "../phase6/Phase6SidePanel";
 import { FeedSidebar } from "../feed/FeedSidebar";
+
+const SAVED_STATES = ["saved", "applied", "interview", "offer"];
+
 export function App() {
   // --- State ---
   const [selectedJob, setSelectedJob] = useState<any>(null); // State to track the active selection
@@ -19,6 +22,8 @@ const [locationFilter, setLocationFilter] = useState("");
 const [roleFilter, setRoleFilter] = useState("");
 const [experienceFilter, setExperienceFilter] = useState("");
 const [companyFilter, setCompanyFilter] = useState("");
+const [viewMode, setViewMode] = useState<"feed" | "saved">("feed");
+const [savedFilter, setSavedFilter] = useState("all");
 const [page, setPage] = useState(1);
 const [pageSize] = useState(50);
 const [totalJobs, setTotalJobs] = useState(0);
@@ -29,32 +34,42 @@ const [previewVersion, setPreviewVersion] = useState(0);
 useEffect(() => {
   const fetchJobs = async () => {
     try {
-      const params = new URLSearchParams();
-      if (locationFilter.trim()) params.set("location", locationFilter.trim());
-      if (roleFilter.trim()) params.set("role", roleFilter.trim());
-      if (experienceFilter.trim()) params.set("experience", experienceFilter.trim());
-      if (companyFilter.trim()) params.set("company", companyFilter.trim());
-      params.set("page", String(page));
-      params.set("page_size", String(pageSize));
-      const query = params.toString();
+      let res;
+      if (viewMode === "feed") {
+        const params = new URLSearchParams();
+        if (locationFilter.trim()) params.set("location", locationFilter.trim());
+        if (roleFilter.trim()) params.set("role", roleFilter.trim());
+        if (experienceFilter.trim()) params.set("experience", experienceFilter.trim());
+        if (companyFilter.trim()) params.set("company", companyFilter.trim());
+        params.set("page", String(page));
+        params.set("page_size", String(pageSize));
+        const query = params.toString();
 
-      const res = await fetch(
-        `http://localhost:8000/api/discovery-feed${query ? `?${query}` : ""}`
-      );
+        res = await fetch(
+          `http://localhost:8000/api/discovery-feed${query ? `?${query}` : ""}`
+        );
+      } else {
+        res = await fetch("http://localhost:8000/api/saved-jobs");
+      }
 
       const data = await res.json();
-      setTotalJobs(data.total_jobs ?? 0);
+      setTotalJobs(viewMode === "feed" ? (data.total_jobs ?? 0) : (data.jobs?.length ?? 0));
+
+      const jobs = data.jobs.map((j: any) => ({
+        id: j.job_id,
+        title: j.title,
+        company: j.company,
+        location: j.location,
+        url: j.url,
+        posted_at: j.posted_at,
+        provider: j.provider,
+        state: j.state,
+      }));
 
       setAvailableJobs(
-        data.jobs.map((j: any) => ({
-          id: j.job_id,
-          title: j.title,
-          company: j.company,
-          location: j.location,
-          url: j.url,
-          posted_at: j.posted_at,
-          provider: j.provider,
-        }))
+        viewMode === "saved"
+          ? jobs.filter((job: any) => SAVED_STATES.includes(job.state ?? ""))
+          : jobs
       );
     } catch (err) {
       console.error("Failed to load discovery feed:", err);
@@ -62,11 +77,22 @@ useEffect(() => {
   };
 
   fetchJobs();
-}, [locationFilter, roleFilter, experienceFilter, companyFilter, page, pageSize]);
+}, [viewMode, locationFilter, roleFilter, experienceFilter, companyFilter, page, pageSize]);
 
 useEffect(() => {
   setPage(1);
 }, [locationFilter, roleFilter, experienceFilter, companyFilter]);
+
+useEffect(() => {
+  setPage(1);
+  setSelectedJob(null);
+  setSavedFilter("all");
+}, [viewMode]);
+
+const filteredSavedJobs = availableJobs.filter((job) => {
+  if (savedFilter === "all") return true;
+  return job.state === savedFilter;
+});
 
   // --- Handlers ---
  const handleJobSelect = (job: any) => {
@@ -75,6 +101,55 @@ useEffect(() => {
   setRequirements([]);
   setView("raw");
   setUserPreviewUrl(null);
+};
+
+ const handleUpdateJobState = async (jobId: string, newState: string) => {
+  try {
+    const response = await fetch(
+      "http://localhost:8000/api/job-state",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: jobId, state: newState }),
+      }
+    );
+
+    if (!response.ok) {
+      const err = await response.json();
+      console.error("Failed to update job state:", err.detail || err);
+      return;
+    }
+
+    setAvailableJobs((prev) => {
+      const updated = prev
+        .map((job) =>
+          job.id === jobId ? { ...job, state: newState } : job
+        );
+      if (viewMode === "saved") {
+        return updated.filter((job) =>
+          SAVED_STATES.includes(job.state ?? "")
+        );
+      }
+      return updated;
+    });
+
+    setSelectedJob((prev: any) => {
+      if (!prev || prev.id !== jobId) {
+        return prev;
+      }
+      if (viewMode === "saved" && !SAVED_STATES.includes(newState)) {
+        return null;
+      }
+      return { ...prev, state: newState };
+    });
+  } catch (error) {
+    console.error("Failed to update job state:", error);
+  }
+};
+
+ const handleSaveJob = async (jobId: string, currentState?: string | null) => {
+  const targetState = currentState === "saved" ? "archived" : "saved";
+  await handleUpdateJobState(jobId, targetState);
 };
 
 useEffect(() => {
@@ -273,9 +348,12 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
       }}>
           {/* 1. Daily Feed (Left Sidebar) */}
           <FeedSidebar
-              jobs={availableJobs}
+              jobs={viewMode === "saved" ? filteredSavedJobs : availableJobs}
               selectedJob={selectedJob}
               onSelectJob={handleJobSelect}
+              onSaveJob={handleSaveJob}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
               filters={{
                   location: locationFilter,
                   role: roleFilter,
@@ -303,6 +381,28 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
               display: "flex",
               flexDirection: "column"
           }}>
+              {viewMode === "saved" && (
+                  <div style={{ marginBottom: "12px" }}>
+                      {["all", "saved", "applied", "interview", "offer"].map((filter) => (
+                          <button
+                              key={filter}
+                              onClick={() => setSavedFilter(filter)}
+                              style={{
+                                  marginRight: "6px",
+                                  padding: "6px 10px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #ddd",
+                                  background: savedFilter === filter ? "#eee" : "#fff",
+                                  cursor: "pointer"
+                              }}
+                          >
+                              {filter === "all"
+                                  ? "All"
+                                  : filter.charAt(0).toUpperCase() + filter.slice(1)}
+                          </button>
+                      ))}
+                  </div>
+              )}
               {!selectedJob ? (
                   <div style={{textAlign: "center", marginTop: "100px", color: "#666"}}>
                       <h1>letsA(ppl)I Discovery</h1>
@@ -355,6 +455,43 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                       )}
 
                       <div style={{marginBottom: "16px"}}>
+                          <button
+                              onClick={() => handleSaveJob(selectedJob.id, selectedJob.state)}
+                              style={{
+                                  padding: "10px 16px",
+                                  borderRadius: "8px",
+                                  border: "1px solid #ddd",
+                                  color: selectedJob.state === "saved" ? "#7a5a00" : "#333",
+                                  textDecoration: "none",
+                                  fontWeight: 600,
+                                  background: "#fff",
+                                  marginRight: "8px",
+                                  cursor: "pointer"
+                              }}
+                          >
+                              {selectedJob.state === "saved" ? "★ Saved" : "⭐ Save Job"}
+                          </button>
+                          <label style={{ marginRight: "8px", color: "#555", fontSize: "14px" }}>
+                              Status
+                          </label>
+                          <select
+                              value={selectedJob.state ?? "saved"}
+                              onChange={(e) => handleUpdateJobState(selectedJob.id, e.target.value)}
+                              style={{
+                                  padding: "10px 12px",
+                                  borderRadius: "8px",
+                                  border: "1px solid #ddd",
+                                  background: "#fff",
+                                  marginRight: "8px",
+                              }}
+                          >
+                              <option value="saved">Saved</option>
+                              <option value="applied">Applied</option>
+                              <option value="interview">Interview</option>
+                              <option value="offer">Offer</option>
+                              <option value="rejected">Rejected</option>
+                              <option value="archived">Archived</option>
+                          </select>
                           <a
                               href={selectedJob.url}
                               target="_blank"

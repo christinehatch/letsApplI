@@ -44,6 +44,20 @@ app = FastAPI()
 @app.on_event("startup")
 async def startup_event():
     global _playwright, _browser, _context
+    from persistence.db import get_connection
+    from persistence.db_init import initialize_database
+    from persistence.migrate import migrate
+    from state import DB_PATH
+
+    migrate(DB_PATH)
+
+    conn = get_connection(DB_PATH)
+    try:
+        initialize_database(conn)
+        print("Database schema initialized")
+    finally:
+        conn.close()
+
     _playwright = await async_playwright().start()
     _browser = await _playwright.chromium.launch()
     _context = await _browser.new_context()
@@ -79,7 +93,8 @@ async def shutdown_event():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -88,6 +103,20 @@ app.add_middleware(
 class HandoffPayload(BaseModel):
     job_id: str
     consent: dict
+
+
+class JobStatePayload(BaseModel):
+    job_id: str
+    state: str
+
+VALID_STATES = {
+    "saved",
+    "applied",
+    "interview",
+    "offer",
+    "rejected",
+    "archived",
+}
 
 
 
@@ -189,6 +218,60 @@ async def discovery_summary(
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/saved-jobs")
+async def saved_jobs():
+    from persistence.db import get_connection
+    from persistence.repos.jobs_repo import JobsRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        jobs_repo = JobsRepo(conn)
+        jobs = jobs_repo.list_saved_jobs()
+    finally:
+        conn.close()
+
+    return {"jobs": jobs}
+
+
+@app.post("/api/job-state")
+async def set_job_state(payload: JobStatePayload):
+    from persistence.db import get_connection
+    from persistence.repos.job_user_state_repo import JobUserStateRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        if payload.state not in VALID_STATES:
+            raise HTTPException(status_code=400, detail="Invalid job state")
+        repo = JobUserStateRepo(conn)
+        repo.set_state(payload.job_id, payload.state)
+        conn.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+    return {"success": True}
+
+
+@app.delete("/api/job-state")
+async def clear_job_state(job_id: str = Query(..., description="Job id to clear user state")):
+    from persistence.db import get_connection
+    from persistence.repos.job_user_state_repo import JobUserStateRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobUserStateRepo(conn)
+        repo.clear_state(job_id)
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"success": True}
 
 @app.get("/api/user-preview")
 async def user_preview(url: str = Query(..., description="Job listing URL")):

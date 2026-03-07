@@ -7,12 +7,14 @@ type Job = {
   location?: string;
   posted_at?: string | null;
   provider?: string;
+  state?: string | null;
 };
 
 type JobCardProps = {
   job: Job;
   selected: boolean;
   onClick: () => void;
+  onSave: () => void;
 };
 
 function formatProvider(provider?: string): string {
@@ -65,14 +67,57 @@ function formatPostedDate(postedAt?: string | null): string {
   return `${weeks} weeks ago`;
 }
 
-export function JobCard({ job, selected, onClick }: JobCardProps) {
+function formatStateLabel(state?: string | null): string | null {
+  if (!state) {
+    return null;
+  }
+  if (state === "saved") {
+    return "Saved";
+  }
+  if (state === "applied") {
+    return "Applied";
+  }
+  if (state === "interview") {
+    return "Interview";
+  }
+  if (state === "offer") {
+    return "Offer";
+  }
+  if (state === "rejected") {
+    return "Rejected";
+  }
+  if (state === "archived") {
+    return "Archived";
+  }
+  if (state === "ignored") {
+    return "Ignored";
+  }
+  return state;
+}
+
+function stateBadgeColor(state?: string | null): string {
+  if (state === "saved") return "#666";
+  if (state === "applied") return "#1f6feb";
+  if (state === "interview") return "#8250df";
+  if (state === "offer") return "#1a7f37";
+  if (state === "rejected") return "#cf222e";
+  if (state === "archived") return "#8c959f";
+  if (state === "ignored") return "#8c959f";
+  return "#666";
+}
+
+export function JobCard({ job, selected, onClick, onSave }: JobCardProps) {
+  const SAVED_STATES = ["saved", "applied", "interview", "offer"];
   const formattedPostedDate = formatPostedDate(job.posted_at);
   const formattedProvider = formatProvider(job.provider);
+  const stateLabel = formatStateLabel(job.state);
+  const isSaved = SAVED_STATES.includes(job.state ?? "");
 
   return (
     <div
       onClick={onClick}
       style={{
+        position: "relative",
         padding: "16px",
         border: selected ? "2px solid #0070f3" : "1px solid #eee",
         borderRadius: "12px",
@@ -81,6 +126,28 @@ export function JobCard({ job, selected, onClick }: JobCardProps) {
         backgroundColor: selected ? "#f0f7ff" : "#fff",
       }}
     >
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onSave();
+        }}
+        style={{
+          position: "absolute",
+          top: "12px",
+          right: "12px",
+          fontSize: "16px",
+          cursor: "pointer",
+          border: "none",
+          background: "transparent",
+          color: isSaved ? "#f5b400" : "#ccc",
+          padding: 0,
+          lineHeight: 1,
+        }}
+        aria-label={isSaved ? "Saved" : "Save"}
+        title={isSaved ? "Saved" : "Save"}
+      >
+        {isSaved ? "★" : "☆"}
+      </button>
       <div
         style={{
           fontSize: "12px",
@@ -98,6 +165,18 @@ export function JobCard({ job, selected, onClick }: JobCardProps) {
       <div style={{ fontSize: "12px", color: "#666", marginTop: "6px" }}>
         Posted {formattedPostedDate} • {formattedProvider}
       </div>
+      {stateLabel && (
+        <div
+          style={{
+            marginTop: "8px",
+            fontSize: "12px",
+            color: stateBadgeColor(job.state),
+            fontWeight: 600,
+          }}
+        >
+          {stateLabel}
+        </div>
+      )}
     </div>
   );
 }

@@ -137,10 +137,12 @@ class JobsRepo:
 
         rows = self.conn.execute(
             f"""
-            SELECT provider_job_key, company, title, location_raw, url, posted_at, provider
+            SELECT jobs.provider_job_key, jobs.company, jobs.title, jobs.location_raw, jobs.url, jobs.posted_at, jobs.provider, job_user_state.state
             FROM jobs
+            LEFT JOIN job_user_state
+              ON jobs.provider_job_key = job_user_state.job_id
             WHERE {' AND '.join(where)}
-            ORDER BY discovered_at DESC
+            ORDER BY jobs.discovered_at DESC
             LIMIT ?
             OFFSET ?
             """,
@@ -158,9 +160,46 @@ class JobsRepo:
                     "url": row[4],
                     "posted_at": row[5],
                     "provider": row[6],
+                    "state": row[7],
                 }
             )
         return jobs, total_jobs
+
+    def list_saved_jobs(self) -> list[dict]:
+        rows = self.conn.execute(
+            """
+            SELECT
+              jobs.provider_job_key,
+              jobs.company,
+              jobs.title,
+              jobs.location_raw,
+              jobs.url,
+              jobs.posted_at,
+              jobs.provider,
+              job_user_state.state
+            FROM jobs
+            JOIN job_user_state
+              ON jobs.provider_job_key = job_user_state.job_id
+            WHERE job_user_state.state IN ('saved', 'applied', 'interview', 'offer')
+            ORDER BY job_user_state.updated_at DESC
+            """
+        ).fetchall()
+
+        jobs: list[dict] = []
+        for row in rows:
+            jobs.append(
+                {
+                    "job_id": row[0],
+                    "company": row[1],
+                    "title": row[2],
+                    "location": row[3],
+                    "url": row[4],
+                    "posted_at": row[5],
+                    "provider": row[6],
+                    "state": row[7],
+                }
+            )
+        return jobs
 
     @staticmethod
     def _experience_tokens(experience: str) -> list[str]:

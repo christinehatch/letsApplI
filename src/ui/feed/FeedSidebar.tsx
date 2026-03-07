@@ -11,12 +11,16 @@ type Job = {
   url?: string;
   posted_at?: string | null;
   provider?: string;
+  state?: string | null;
 };
 
 type FeedSidebarProps = {
   jobs: Job[];
   selectedJob: Job | null;
   onSelectJob: (job: Job) => void;
+  onSaveJob: (jobId: string, currentState?: string | null) => void;
+  viewMode: "feed" | "saved";
+  setViewMode: (mode: "feed" | "saved") => void;
   filters: {
     location: string;
     role: string;
@@ -38,6 +42,9 @@ export function FeedSidebar({
   jobs,
   selectedJob,
   onSelectJob,
+  onSaveJob,
+  viewMode,
+  setViewMode,
   filters,
   setFilters,
   page,
@@ -56,9 +63,21 @@ export function FeedSidebar({
         overflow: "hidden",
       }}
     >
-      <FeedFilters filters={filters} setFilters={setFilters} />
-      <JobList jobs={jobs} selectedJob={selectedJob} onSelectJob={onSelectJob} />
-      <FeedPagination page={page} setPage={setPage} totalPages={totalPages} />
+      <FeedFilters
+        filters={filters}
+        setFilters={setFilters}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+      />
+      <JobList
+        jobs={jobs}
+        selectedJob={selectedJob}
+        onSelectJob={onSelectJob}
+        onSaveJob={onSaveJob}
+      />
+      {viewMode === "feed" && (
+        <FeedPagination page={page} setPage={setPage} totalPages={totalPages} />
+      )}
     </aside>
   );
 }
