@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Phase6SidePanel, type Phase6SidePanelHandle } from "../phase6/Phase6SidePanel";
+import { FeedSidebar } from "../feed/FeedSidebar";
 export function App() {
   // --- State ---
   const [selectedJob, setSelectedJob] = useState<any>(null); // State to track the active selection
@@ -18,6 +19,9 @@ const [locationFilter, setLocationFilter] = useState("");
 const [roleFilter, setRoleFilter] = useState("");
 const [experienceFilter, setExperienceFilter] = useState("");
 const [companyFilter, setCompanyFilter] = useState("");
+const [page, setPage] = useState(1);
+const [pageSize] = useState(50);
+const [totalJobs, setTotalJobs] = useState(0);
 const phase6Ref = useRef<Phase6SidePanelHandle | null>(null);
 const [userPreviewUrl, setUserPreviewUrl] = useState<string | null>(null);
 const [previewVersion, setPreviewVersion] = useState(0);
@@ -30,6 +34,8 @@ useEffect(() => {
       if (roleFilter.trim()) params.set("role", roleFilter.trim());
       if (experienceFilter.trim()) params.set("experience", experienceFilter.trim());
       if (companyFilter.trim()) params.set("company", companyFilter.trim());
+      params.set("page", String(page));
+      params.set("page_size", String(pageSize));
       const query = params.toString();
 
       const res = await fetch(
@@ -37,6 +43,7 @@ useEffect(() => {
       );
 
       const data = await res.json();
+      setTotalJobs(data.total_jobs ?? 0);
 
       setAvailableJobs(
         data.jobs.map((j: any) => ({
@@ -53,6 +60,10 @@ useEffect(() => {
   };
 
   fetchJobs();
+}, [locationFilter, roleFilter, experienceFilter, companyFilter, page, pageSize]);
+
+useEffect(() => {
+  setPage(1);
 }, [locationFilter, roleFilter, experienceFilter, companyFilter]);
 
   // --- Handlers ---
@@ -249,78 +260,36 @@ const renderJobContent = (content: string) => {
   );
 };
 
+const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
+
   return (
       <div style={{
           display: "flex",
           height: "100vh",
           overflow: "hidden",   // 🔥 prevents whole-page scroll
           fontFamily: "system-ui, sans-serif"
-      }}>      {/* 1. Daily Feed (Left Sidebar) */}
-          <aside style={{
-              width: "320px",
-              borderRight: "1px solid #eee",
-              padding: "20px",
-              backgroundColor: "#fff",
-              overflowY: "auto",    // 🔥 allow independent scroll
-              height: "100vh"       // 🔥 fill full viewport
-          }}>
-              <h2 style={{fontSize: "18px", marginBottom: "20px"}}>Daily Feed</h2>
-              <div style={{display: "grid", gap: "8px", marginBottom: "16px"}}>
-                  <input
-                      placeholder="Location"
-                      value={locationFilter}
-                      onChange={(e) => setLocationFilter(e.target.value)}
-                      style={{padding: "8px 10px", border: "1px solid #ddd", borderRadius: "8px"}}
-                  />
-                  <input
-                      placeholder="Role keyword"
-                      value={roleFilter}
-                      onChange={(e) => setRoleFilter(e.target.value)}
-                      style={{padding: "8px 10px", border: "1px solid #ddd", borderRadius: "8px"}}
-                  />
-                  <select
-                      value={experienceFilter}
-                      onChange={(e) => setExperienceFilter(e.target.value)}
-                      style={{padding: "8px 10px", border: "1px solid #ddd", borderRadius: "8px"}}
-                  >
-                      <option value="">All experience</option>
-                      <option value="junior">Junior</option>
-                      <option value="mid">Mid</option>
-                      <option value="senior">Senior</option>
-                  </select>
-                  <input
-                      placeholder="Company"
-                      value={companyFilter}
-                      onChange={(e) => setCompanyFilter(e.target.value)}
-                      style={{padding: "8px 10px", border: "1px solid #ddd", borderRadius: "8px"}}
-                  />
-              </div>
-              {availableJobs.map(job => (
-                  <div
-                      key={job.id}
-                      onClick={() => handleJobSelect(job)} // Select the job card
-                      style={{
-                          padding: "16px",
-                          border: selectedJob?.id === job.id ? "2px solid #0070f3" : "1px solid #eee",
-                          borderRadius: "12px",
-                          marginBottom: "12px",
-                          cursor: "pointer",
-                          backgroundColor: selectedJob?.id === job.id ? "#f0f7ff" : "#fff"
-                      }}
-                  >
-                      <div style={{
-                          fontSize: "12px",
-                          fontWeight: "bold",
-                          color: "#0070f3",
-                          marginBottom: "4px"
-                      }}>{job.company}</div>
-                      <div style={{fontWeight: 600, fontSize: "14px"}}>{job.title}</div>
-                      {job.location && (
-                          <div style={{fontSize: "12px", color: "#666", marginTop: "4px"}}>{job.location}</div>
-                      )}
-                  </div>
-              ))}
-          </aside>
+      }}>
+          {/* 1. Daily Feed (Left Sidebar) */}
+          <FeedSidebar
+              jobs={availableJobs}
+              selectedJob={selectedJob}
+              onSelectJob={handleJobSelect}
+              filters={{
+                  location: locationFilter,
+                  role: roleFilter,
+                  company: companyFilter,
+                  experience: experienceFilter,
+              }}
+              setFilters={{
+                  setLocationFilter,
+                  setRoleFilter,
+                  setCompanyFilter,
+                  setExperienceFilter,
+              }}
+              page={page}
+              setPage={setPage}
+              totalPages={totalPages}
+          />
 
           {/* 2. Main Content Area (Center) */}
           <main style={{
