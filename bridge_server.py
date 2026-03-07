@@ -137,6 +137,8 @@ def _normalize_filter(value: Optional[str]) -> Optional[str]:
 
 @app.get("/api/discovery-feed")
 async def discovery_feed(
+    page: int = Query(1, ge=1, description="1-based page number"),
+    page_size: int = Query(50, ge=1, le=500, description="Page size"),
     location: Optional[str] = Query(None, description="Optional location substring"),
     role: Optional[str] = Query(None, description="Optional title keyword"),
     experience: Optional[str] = Query(
@@ -151,8 +153,9 @@ async def discovery_feed(
     conn = get_connection(DB_PATH)
     try:
         repo = JobsRepo(conn)
-        jobs = repo.list_discovery_feed_jobs(
-            limit=100,
+        jobs, total_jobs = repo.list_discovery_feed_jobs(
+            page=page,
+            page_size=page_size,
             location=_normalize_filter(location),
             role=_normalize_filter(role),
             experience=_normalize_filter(experience),
@@ -161,7 +164,12 @@ async def discovery_feed(
     finally:
         conn.close()
 
-    return {"jobs": jobs}
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total_jobs": total_jobs,
+        "jobs": jobs,
+    }
 
 @app.get("/api/discovery-summary")
 async def discovery_summary(

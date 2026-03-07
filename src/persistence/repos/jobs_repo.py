@@ -104,12 +104,79 @@ class JobsRepo:
     def list_discovery_feed_jobs(
         self,
         *,
-        limit: int = 100,
+        page: int = 1,
+        page_size: int = 50,
         location: Optional[str] = None,
         role: Optional[str] = None,
         experience: Optional[str] = None,
         company: Optional[str] = None,
-    ) -> list[dict]:
+    ) -> tuple[list[dict], int]:
+        where, params = self._build_discovery_where_and_params(
+            location=location,
+            role=role,
+            experience=experience,
+            company=company,
+        )
+
+        page = max(1, page)
+        page_size = max(1, page_size)
+        offset = (page - 1) * page_size
+
+        count_row = self.conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM jobs
+            WHERE {' AND '.join(where)}
+            """,
+            tuple(params),
+        ).fetchone()
+        total_jobs = int(count_row[0]) if count_row else 0
+
+        paged_params = list(params)
+        paged_params.extend([page_size, offset])
+
+        rows = self.conn.execute(
+            f"""
+            SELECT provider_job_key, company, title, location_raw, url
+            FROM jobs
+            WHERE {' AND '.join(where)}
+            ORDER BY discovered_at DESC
+            LIMIT ?
+            OFFSET ?
+            """,
+            tuple(paged_params),
+        ).fetchall()
+
+        jobs: list[dict] = []
+        for row in rows:
+            jobs.append(
+                {
+                    "job_id": row[0],
+                    "company": row[1],
+                    "title": row[2],
+                    "location": row[3],
+                    "url": row[4],
+                }
+            )
+        return jobs, total_jobs
+
+    @staticmethod
+    def _experience_tokens(experience: str) -> list[str]:
+        mapping = {
+            "junior": ["junior", "new grad", "entry"],
+            "mid": ["engineer", "developer"],
+            "senior": ["senior", "staff", "principal"],
+        }
+        return mapping.get(experience, [])
+
+    def _build_discovery_where_and_params(
+        self,
+        *,
+        location: Optional[str],
+        role: Optional[str],
+        experience: Optional[str],
+        company: Optional[str],
+    ) -> tuple[list[str], list]:
         where = ["is_archived = 0"]
         params: list = []
 
@@ -145,37 +212,4 @@ class JobsRepo:
                 where.append("LOWER(title) LIKE ?")
                 params.append(f"%{exp}%")
 
-        params.append(limit)
-
-        rows = self.conn.execute(
-            f"""
-            SELECT provider_job_key, company, title, location_raw, url
-            FROM jobs
-            WHERE {' AND '.join(where)}
-            ORDER BY discovered_at DESC
-            LIMIT ?
-            """,
-            tuple(params),
-        ).fetchall()
-
-        jobs: list[dict] = []
-        for row in rows:
-            jobs.append(
-                {
-                    "job_id": row[0],
-                    "company": row[1],
-                    "title": row[2],
-                    "location": row[3],
-                    "url": row[4],
-                }
-            )
-        return jobs
-
-    @staticmethod
-    def _experience_tokens(experience: str) -> list[str]:
-        mapping = {
-            "junior": ["junior", "new grad", "entry"],
-            "mid": ["engineer", "developer"],
-            "senior": ["senior", "staff", "principal"],
-        }
-        return mapping.get(experience, [])
+        return where, params

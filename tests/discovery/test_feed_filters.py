@@ -81,8 +81,9 @@ def test_discovery_feed_no_filters_returns_baseline_order():
     conn = _create_db_with_jobs()
     repo = JobsRepo(conn)
 
-    jobs = repo.list_discovery_feed_jobs()
+    jobs, total_jobs = repo.list_discovery_feed_jobs()
 
+    assert total_jobs == 4
     assert [j["job_id"] for j in jobs] == [
         "lever:github:4",
         "greenhouse:notion:3",
@@ -95,9 +96,10 @@ def test_discovery_feed_filter_by_company():
     conn = _create_db_with_jobs()
     repo = JobsRepo(conn)
 
-    jobs = repo.list_discovery_feed_jobs(company="stripe")
+    jobs, total_jobs = repo.list_discovery_feed_jobs(company="stripe")
 
     assert len(jobs) == 1
+    assert total_jobs == 1
     assert jobs[0]["company"] == "Stripe"
 
 
@@ -105,8 +107,9 @@ def test_discovery_feed_filter_by_role():
     conn = _create_db_with_jobs()
     repo = JobsRepo(conn)
 
-    jobs = repo.list_discovery_feed_jobs(role="software")
+    jobs, total_jobs = repo.list_discovery_feed_jobs(role="software")
 
+    assert total_jobs == 2
     assert {j["job_id"] for j in jobs} == {
         "greenhouse:stripe:1",
         "lever:github:4",
@@ -117,8 +120,9 @@ def test_discovery_feed_filter_by_location():
     conn = _create_db_with_jobs()
     repo = JobsRepo(conn)
 
-    jobs = repo.list_discovery_feed_jobs(location="san francisco")
+    jobs, total_jobs = repo.list_discovery_feed_jobs(location="san francisco")
 
+    assert total_jobs == 2
     assert {j["job_id"] for j in jobs} == {
         "greenhouse:stripe:1",
         "lever:github:4",
@@ -129,7 +133,7 @@ def test_discovery_feed_multiple_filters_combined():
     conn = _create_db_with_jobs()
     repo = JobsRepo(conn)
 
-    jobs = repo.list_discovery_feed_jobs(
+    jobs, total_jobs = repo.list_discovery_feed_jobs(
         company="openai",
         role="backend",
         experience="junior",
@@ -137,4 +141,5 @@ def test_discovery_feed_multiple_filters_combined():
     )
 
     assert len(jobs) == 1
+    assert total_jobs == 1
     assert jobs[0]["job_id"] == "lever:openai:2"
