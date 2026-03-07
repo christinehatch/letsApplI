@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Phase6SidePanel, type Phase6SidePanelHandle } from "../phase6/Phase6SidePanel";
 import { FeedSidebar } from "../feed/FeedSidebar";
+import { JobCard } from "../feed/JobCard";
 
-const SAVED_STATES = ["saved", "applied", "interview", "offer"];
+const PIPELINE_STATES = ["saved", "applied", "interview", "offer"];
+const SAVED_STATES = PIPELINE_STATES;
 
 export function App() {
   // --- State ---
@@ -23,7 +25,6 @@ const [roleFilter, setRoleFilter] = useState("");
 const [experienceFilter, setExperienceFilter] = useState("");
 const [companyFilter, setCompanyFilter] = useState("");
 const [viewMode, setViewMode] = useState<"feed" | "saved">("feed");
-const [savedFilter, setSavedFilter] = useState("all");
 const [page, setPage] = useState(1);
 const [pageSize] = useState(50);
 const [totalJobs, setTotalJobs] = useState(0);
@@ -86,16 +87,19 @@ useEffect(() => {
 useEffect(() => {
   setPage(1);
   setSelectedJob(null);
-  setSavedFilter("all");
 }, [viewMode]);
 
-const filteredSavedJobs = availableJobs.filter((job) => {
-  if (savedFilter === "all") return true;
-  return job.state === savedFilter;
-});
+const pipelineJobs = PIPELINE_STATES.reduce((acc: Record<string, any[]>, state) => {
+  acc[state] = availableJobs.filter((job) => job.state === state);
+  return acc;
+}, {});
 
-  // --- Handlers ---
+ // --- Handlers ---
  const handleJobSelect = (job: any) => {
+  if (viewMode === "saved" && selectedJob?.id === job.id) {
+    setSelectedJob(null);
+    return;
+  }
   setSelectedJob(job);
   setHydratedContent(null);
   setRequirements([]);
@@ -348,7 +352,13 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
       }}>
           {/* 1. Daily Feed (Left Sidebar) */}
           <FeedSidebar
-              jobs={viewMode === "saved" ? filteredSavedJobs : availableJobs}
+              jobs={
+                  viewMode === "saved"
+                      ? availableJobs.filter((job) =>
+                          SAVED_STATES.includes(job.state ?? "")
+                      )
+                      : availableJobs
+              }
               selectedJob={selectedJob}
               onSelectJob={handleJobSelect}
               onSaveJob={handleSaveJob}
@@ -381,35 +391,63 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
               display: "flex",
               flexDirection: "column"
           }}>
-              {viewMode === "saved" && (
-                  <div style={{ marginBottom: "12px" }}>
-                      {["all", "saved", "applied", "interview", "offer"].map((filter) => (
-                          <button
-                              key={filter}
-                              onClick={() => setSavedFilter(filter)}
+              {viewMode === "saved" && !selectedJob ? (
+                  <div
+                      style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(4, 1fr)",
+                          gap: "12px",
+                      }}
+                  >
+                      {PIPELINE_STATES.map((state) => (
+                          <div
+                              key={state}
                               style={{
-                                  marginRight: "6px",
-                                  padding: "6px 10px",
-                                  borderRadius: "6px",
-                                  border: "1px solid #ddd",
-                                  background: savedFilter === filter ? "#eee" : "#fff",
-                                  cursor: "pointer"
+                                  background: "#fafafa",
+                                  border: "1px solid #eee",
+                                  borderRadius: "8px",
+                                  padding: "10px",
                               }}
                           >
-                              {filter === "all"
-                                  ? "All"
-                                  : filter.charAt(0).toUpperCase() + filter.slice(1)}
-                          </button>
+                              <h4 style={{ marginBottom: "10px", textTransform: "capitalize" }}>
+                                  {state}
+                              </h4>
+                              {pipelineJobs[state]?.map((job) => (
+                                  <JobCard
+                                      key={job.id}
+                                      job={job}
+                                      selected={selectedJob?.id === job.id}
+                                      onClick={() => handleJobSelect(job)}
+                                      onSave={() => handleSaveJob(job.id, job.state)}
+                                  />
+                              ))}
+                          </div>
                       ))}
                   </div>
-              )}
-              {!selectedJob ? (
+              ) : !selectedJob ? (
                   <div style={{textAlign: "center", marginTop: "100px", color: "#666"}}>
                       <h1>letsA(ppl)I Discovery</h1>
                       <p>Select a job from your daily feed to begin exploration.</p>
                   </div>
               ) : (
                   <>
+                      {viewMode === "saved" && (
+                          <button
+                              onClick={() => setSelectedJob(null)}
+                              style={{
+                                  alignSelf: "flex-start",
+                                  marginBottom: "12px",
+                                  border: "1px solid #ddd",
+                                  background: "#fff",
+                                  borderRadius: "8px",
+                                  padding: "8px 12px",
+                                  cursor: "pointer",
+                                  fontWeight: 600,
+                              }}
+                          >
+                              ← Back to pipeline
+                          </button>
+                      )}
                       {isReading && <p style={{color: "#0070f3"}}><em>System is reading...</em></p>}
                       {userPreviewUrl && !hydratedContent && (
                           <div style={{
