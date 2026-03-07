@@ -14,6 +14,10 @@ const [requirements, setRequirements] = useState<Requirement[]>([]);
 const [view, setView] = useState<'raw' | 'structured'>('raw')
     const [isReading, setIsReading] = useState(false);
 const [availableJobs, setAvailableJobs] = useState<any[]>([]);
+const [locationFilter, setLocationFilter] = useState("");
+const [roleFilter, setRoleFilter] = useState("");
+const [experienceFilter, setExperienceFilter] = useState("");
+const [companyFilter, setCompanyFilter] = useState("");
 const phase6Ref = useRef<Phase6SidePanelHandle | null>(null);
 const [userPreviewUrl, setUserPreviewUrl] = useState<string | null>(null);
 const [previewVersion, setPreviewVersion] = useState(0);
@@ -21,8 +25,15 @@ const [previewVersion, setPreviewVersion] = useState(0);
 useEffect(() => {
   const fetchJobs = async () => {
     try {
+      const params = new URLSearchParams();
+      if (locationFilter.trim()) params.set("location", locationFilter.trim());
+      if (roleFilter.trim()) params.set("role", roleFilter.trim());
+      if (experienceFilter.trim()) params.set("experience", experienceFilter.trim());
+      if (companyFilter.trim()) params.set("company", companyFilter.trim());
+      const query = params.toString();
+
       const res = await fetch(
-        "http://localhost:8000/api/discovery-feed?location=all"
+        `http://localhost:8000/api/discovery-feed${query ? `?${query}` : ""}`
       );
 
       const data = await res.json();
@@ -32,6 +43,7 @@ useEffect(() => {
           id: j.job_id,
           title: j.title,
           company: j.company,
+          location: j.location,
           url: j.url,
         }))
       );
@@ -41,7 +53,7 @@ useEffect(() => {
   };
 
   fetchJobs();
-}, []);
+}, [locationFilter, roleFilter, experienceFilter, companyFilter]);
 
   // --- Handlers ---
  const handleJobSelect = (job: any) => {
@@ -253,6 +265,36 @@ const renderJobContent = (content: string) => {
               height: "100vh"       // 🔥 fill full viewport
           }}>
               <h2 style={{fontSize: "18px", marginBottom: "20px"}}>Daily Feed</h2>
+              <div style={{display: "grid", gap: "8px", marginBottom: "16px"}}>
+                  <input
+                      placeholder="Location"
+                      value={locationFilter}
+                      onChange={(e) => setLocationFilter(e.target.value)}
+                      style={{padding: "8px 10px", border: "1px solid #ddd", borderRadius: "8px"}}
+                  />
+                  <input
+                      placeholder="Role keyword"
+                      value={roleFilter}
+                      onChange={(e) => setRoleFilter(e.target.value)}
+                      style={{padding: "8px 10px", border: "1px solid #ddd", borderRadius: "8px"}}
+                  />
+                  <select
+                      value={experienceFilter}
+                      onChange={(e) => setExperienceFilter(e.target.value)}
+                      style={{padding: "8px 10px", border: "1px solid #ddd", borderRadius: "8px"}}
+                  >
+                      <option value="">All experience</option>
+                      <option value="junior">Junior</option>
+                      <option value="mid">Mid</option>
+                      <option value="senior">Senior</option>
+                  </select>
+                  <input
+                      placeholder="Company"
+                      value={companyFilter}
+                      onChange={(e) => setCompanyFilter(e.target.value)}
+                      style={{padding: "8px 10px", border: "1px solid #ddd", borderRadius: "8px"}}
+                  />
+              </div>
               {availableJobs.map(job => (
                   <div
                       key={job.id}
@@ -273,6 +315,9 @@ const renderJobContent = (content: string) => {
                           marginBottom: "4px"
                       }}>{job.company}</div>
                       <div style={{fontWeight: 600, fontSize: "14px"}}>{job.title}</div>
+                      {job.location && (
+                          <div style={{fontSize: "12px", color: "#666", marginTop: "4px"}}>{job.location}</div>
+                      )}
                   </div>
               ))}
           </aside>

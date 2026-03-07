@@ -124,41 +124,42 @@ def _prune_cache(now: float) -> None:
         _preview_cache.pop(k, None)
 
 
+def _normalize_filter(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.lower() == "all":
+        return None
+    return normalized
+
+
 @app.get("/api/discovery-feed")
 async def discovery_feed(
-    location: str = Query("bay_area", description="Location filter: bay_area | all")
+    location: Optional[str] = Query(None, description="Optional location substring"),
+    role: Optional[str] = Query(None, description="Optional title keyword"),
+    experience: Optional[str] = Query(
+        None, description="Optional experience filter: junior | mid | senior"
+    ),
+    company: Optional[str] = Query(None, description="Optional company substring"),
 ):
     from persistence.db import get_connection
+    from persistence.repos.jobs_repo import JobsRepo
     from state import DB_PATH
-    from discovery.location_filters import is_sf_bay_area
 
     conn = get_connection(DB_PATH)
     try:
-        rows = conn.execute("""
-            SELECT provider_job_key, company, title, location_raw, url
-            FROM jobs
-            ORDER BY discovered_at DESC
-            LIMIT 100
-        """).fetchall()
+        repo = JobsRepo(conn)
+        jobs = repo.list_discovery_feed_jobs(
+            limit=100,
+            location=_normalize_filter(location),
+            role=_normalize_filter(role),
+            experience=_normalize_filter(experience),
+            company=_normalize_filter(company),
+        )
     finally:
         conn.close()
-
-    jobs = [
-        {
-            "job_id": row[0],
-            "company": row[1],
-            "title": row[2],
-            "location": row[3],
-            "url": row[4],
-        }
-        for row in rows
-    ]
-
-    if location == "bay_area":
-        jobs = [
-            j for j in jobs
-            if j["location"] and is_sf_bay_area(j["location"])
-        ]
 
     return {"jobs": jobs}
 
