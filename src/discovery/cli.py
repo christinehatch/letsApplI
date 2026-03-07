@@ -10,6 +10,7 @@ from discovery.loop import poll_all
 from discovery.run_state import load_last_run, save_last_run
 from discovery.summary import summarize_since
 from discovery.company_registry import seeded_signals
+from discovery.polling_service import run_polling_service
 from state import DB_PATH
 
 def cmd_init(_: argparse.Namespace) -> None:
@@ -86,6 +87,17 @@ def cmd_seed_registry(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_run_polling_service(args: argparse.Namespace) -> None:
+    try:
+        run_polling_service(
+            DB_PATH,
+            cycle_sleep_seconds=args.cycle_sleep_seconds,
+            max_cycles=args.max_cycles,
+        )
+    except KeyboardInterrupt:
+        print("Polling service stopped by user.")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="letsApplI discovery")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -126,6 +138,11 @@ def main() -> None:
     sp.add_argument("--poll-interval-minutes", type=int, default=360)
     sp.add_argument("--replace", action="store_true")
     sp.set_defaults(func=cmd_seed_registry)
+
+    sp = sub.add_parser("run-polling-service")
+    sp.add_argument("--cycle-sleep-seconds", type=float, default=60.0)
+    sp.add_argument("--max-cycles", type=int, default=None)
+    sp.set_defaults(func=cmd_run_polling_service)
 
     args = p.parse_args()
     args.func(args)
