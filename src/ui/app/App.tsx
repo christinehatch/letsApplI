@@ -19,6 +19,7 @@ export function App() {
 const [requirements, setRequirements] = useState<Requirement[]>([]);
 const [view, setView] = useState<'raw' | 'structured'>('raw')
     const [isReading, setIsReading] = useState(false);
+const [isInterpreting, setIsInterpreting] = useState(false);
 const [availableJobs, setAvailableJobs] = useState<any[]>([]);
 const [locationFilter, setLocationFilter] = useState("");
 const [roleFilter, setRoleFilter] = useState("");
@@ -279,6 +280,7 @@ useEffect(() => {
 
  const handleInterpretation = async (payload: any) => {
   console.log("Interpretation requested.");
+  setIsInterpreting(true);
 
   try {
     const response = await fetch(
@@ -305,7 +307,9 @@ useEffect(() => {
     setView("structured");
 
     phase6Ref.current?.completeInterpretation();
+    setIsInterpreting(false);
   } catch (error) {
+    setIsInterpreting(false);
     console.error("Interpretation failed:", error);
   }
 };
@@ -320,6 +324,16 @@ const tabStyle = (active: boolean) => ({
 const contentBoxStyle = {
   padding: "24px", border: "1px solid #0070f3", borderRadius: "12px",
   backgroundColor: "#fff", boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+};
+
+const spinnerStyle: React.CSSProperties = {
+  width: "18px",
+  height: "18px",
+  border: "3px solid #eee",
+  borderTop: "3px solid #0070f3",
+  borderRadius: "50%",
+  animation: "spin 1s linear infinite",
+  marginRight: "10px"
 };
 
 const articleStyle: React.CSSProperties = {
@@ -376,6 +390,13 @@ const renderJobContent = (content: string) => {
 const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
 
   return (
+      <>
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
       <div style={{
           display: "flex",
           height: "100vh",
@@ -480,7 +501,18 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                               ← Back to pipeline
                           </button>
                       )}
-                      {isReading && <p style={{color: "#0070f3"}}><em>System is reading...</em></p>}
+                      {isReading && (
+                        <div style={{ display: "flex", alignItems: "center", marginBottom: "12px", color: "#0070f3", fontWeight: 500 }}>
+                          <div style={spinnerStyle}></div>
+                          Hydrating job posting...
+                        </div>
+                      )}
+                      {isInterpreting && (
+                        <div style={{ display: "flex", alignItems: "center", marginBottom: "12px", color: "#7c3aed", fontWeight: 500 }}>
+                          <div style={spinnerStyle}></div>
+                          Analyzing role structure...
+                        </div>
+                      )}
                       {userPreviewUrl && !hydratedContent && (
                           <div style={{
                               backgroundColor: "#fff",
@@ -666,5 +698,6 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
           )}
 
       </div>
+      </>
   );
 }
