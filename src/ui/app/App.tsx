@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Phase6SidePanel, type Phase6SidePanelHandle } from "../phase6/Phase6SidePanel";
+import { type Phase6SidePanelHandle } from "../phase6/Phase6SidePanel";
 import { FeedSidebar } from "../feed/FeedSidebar";
 import { JobCard } from "../feed/JobCard";
+import { RightPanel } from "../rightpanel/RightPanel";
 
 const PIPELINE_STATES = ["saved", "applied", "interview", "offer"];
 const SAVED_STATES = PIPELINE_STATES;
@@ -706,7 +707,7 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                   height: "100vh",
                   overflowY: "auto"   // 🔥 independent scroll
               }}>
-                  <Phase6SidePanel
+                  <RightPanel
                       ref={phase6Ref}
                       jobId={selectedJob.id}
                       jobTitle={selectedJob.title}
