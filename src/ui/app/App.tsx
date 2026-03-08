@@ -336,6 +336,14 @@ const spinnerStyle: React.CSSProperties = {
   marginRight: "10px"
 };
 
+const skeletonLine: React.CSSProperties = {
+  height: "14px",
+  backgroundColor: "#eee",
+  borderRadius: "6px",
+  marginBottom: "12px",
+  animation: "pulse 1.5s infinite ease-in-out"
+};
+
 const articleStyle: React.CSSProperties = {
   maxWidth: "720px",
   margin: "0 auto",
@@ -395,6 +403,11 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+          0% { opacity: 0.6; }
+          50% { opacity: 1; }
+          100% { opacity: 0.6; }
         }
       `}</style>
       <div style={{
@@ -614,7 +627,13 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                       {!hydratedContent ? (
                           <div style={{textAlign: "center", padding: "60px"}}>
                               <h2>{selectedJob.title} at {selectedJob.company}</h2>
-                              <p style={{color: "#666"}}>Loading job content…</p>
+                              {isReading && (
+                                <div>
+                                  {Array.from({ length: 12 }).map((_, i) => (
+                                    <div key={i} style={skeletonLine}></div>
+                                  ))}
+                                </div>
+                              )}
                           </div>
                       ) : (
 
