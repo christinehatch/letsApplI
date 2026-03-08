@@ -236,6 +236,27 @@ async def saved_jobs():
     return {"jobs": jobs}
 
 
+@app.get("/api/job-interpretation")
+async def job_interpretation(
+    job_id: str = Query(..., description="Canonical job id"),
+):
+    from persistence.db import get_connection
+    from persistence.repos.job_interpretation_repo import JobInterpretationRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobInterpretationRepo(conn)
+        interpretation = repo.get_interpretation(job_id)
+    finally:
+        conn.close()
+
+    return {
+        "job_id": job_id,
+        "interpretation": interpretation,
+    }
+
+
 @app.post("/api/job-state")
 async def set_job_state(payload: JobStatePayload):
     from persistence.db import get_connection
