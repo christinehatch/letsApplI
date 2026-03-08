@@ -236,18 +236,93 @@ async def saved_jobs():
     return {"jobs": jobs}
 
 
+@app.get("/api/hydrated-job")
+async def get_hydrated_job(
+    job_id: str = Query(..., description="Canonical job id"),
+):
+    from persistence.db import get_connection
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+
+    try:
+        row = conn.execute(
+            """
+            SELECT h.raw_content
+            FROM hydrations h
+            JOIN jobs j
+              ON j.id = h.job_id
+            WHERE j.provider_job_key = ?
+            ORDER BY h.created_at DESC
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+
+        if not row:
+            return {
+                "job_id": job_id,
+                "content": None
+            }
+
+        return {
+            "job_id": job_id,
+            "content": row["raw_content"]
+        }
+
+    finally:
+        conn.close()
+
+
 @app.get("/api/job-interpretation")
 async def job_interpretation(
     job_id: str = Query(..., description="Canonical job id"),
 ):
     from persistence.db import get_connection
     from persistence.repos.job_interpretation_repo import JobInterpretationRepo
+    from interpretation.phase52_interpreter import Phase52Interpreter
+    from interpretation.phase52_validator import Phase52Validator
     from state import DB_PATH
 
     conn = get_connection(DB_PATH)
     try:
         repo = JobInterpretationRepo(conn)
         interpretation = repo.get_interpretation(job_id)
+
+        if interpretation is not None:
+            return {
+                "job_id": job_id,
+                "interpretation": interpretation,
+            }
+
+        row = conn.execute(
+            """
+            SELECT h.raw_content
+            FROM hydrations h
+            JOIN jobs j
+              ON j.id = h.job_id
+            WHERE j.provider_job_key = ?
+            ORDER BY h.created_at DESC
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+
+        if not row:
+            return {
+                "job_id": job_id,
+                "interpretation": None,
+            }
+
+        job_text = row["raw_content"]
+
+        interpreter = Phase52Interpreter()
+        interpretation = interpreter.interpret(job_text)
+
+        validator = Phase52Validator()
+        interpretation = validator.validate(interpretation)
+
+        repo.save_interpretation(job_id, interpretation, "phase52-placeholder")
     finally:
         conn.close()
 
@@ -451,6 +526,7 @@ async def handle_interpret_job(payload: HandoffPayload):
 
         from phase5.phase5_1.types import ConsentPayload
         from persistence.db import get_connection
+        from persistence.repos.job_interpretation_repo import JobInterpretationRepo
         from state import DB_PATH
 
         consent = ConsentPayload(
@@ -495,6 +571,13 @@ async def handle_interpret_job(payload: HandoffPayload):
         interpreter.set_input(interpretation_input)
 
         result = interpreter.interpret()
+
+        conn = get_connection(DB_PATH)
+        try:
+            repo = JobInterpretationRepo(conn)
+            repo.save_interpretation(job_id, result, "phase52-placeholder")
+        finally:
+            conn.close()
 
         return {
             "job_id": job_id,

@@ -11,6 +11,7 @@ import { Phase6StateRouter } from "./Phase6StateRouter";
 export type Phase6SidePanelHandle = {
   requestInterpretation: () => void;
   completeInterpretation: () => void;
+  restoreInterpreted: (interpretation: unknown) => void;
   reset: () => void;
   revoke: () => void;
 };
@@ -57,6 +58,7 @@ export const Phase6SidePanel = forwardRef<
   Phase6SidePanelProps
 >(function Phase6SidePanel({ jobId, jobTitle, onConsentGranted, onConsentRevoked }, ref) {
   const [state, setState] = useState<Phase6State>("VIEWING");
+  const [, setInterpretation] = useState<unknown | null>(null);
 
   // ✅ NEW: Phase 6 is now the single place that decides what scope is being requested.
   const [requestedScope, setRequestedScope] =
@@ -105,6 +107,11 @@ export const Phase6SidePanel = forwardRef<
         }
         return prev;
       });
+    },
+
+    restoreInterpreted: (interpretation: unknown) => {
+      setInterpretation(interpretation);
+      setState("INTERPRETED");
     },
 
     reset: () => {

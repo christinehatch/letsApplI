@@ -29,6 +29,8 @@ const [page, setPage] = useState(1);
 const [pageSize] = useState(50);
 const [totalJobs, setTotalJobs] = useState(0);
 const phase6Ref = useRef<Phase6SidePanelHandle | null>(null);
+const hydrationCache = useRef<Record<string, string>>({});
+const interpretationCache = useRef<Record<string, any>>({});
 const [userPreviewUrl, setUserPreviewUrl] = useState<string | null>(null);
 const [previewVersion, setPreviewVersion] = useState(0);
 
@@ -100,6 +102,7 @@ const pipelineJobs = PIPELINE_STATES.reduce((acc: Record<string, any[]>, state) 
     setSelectedJob(null);
     return;
   }
+  phase6Ref.current?.reset();
   setSelectedJob(job);
   setHydratedContent(null);
   setRequirements([]);
@@ -158,47 +161,77 @@ const pipelineJobs = PIPELINE_STATES.reduce((acc: Record<string, any[]>, state) 
 
 useEffect(() => {
   if (!selectedJob) return;
+  const jobId = selectedJob.id;
 
-  const run = async () => {
-    // wait one microtask to ensure mount
-    await Promise.resolve();
+  const loadArtifacts = async () => {
+    if (hydrationCache.current[jobId]) {
+      setHydratedContent(hydrationCache.current[jobId]);
 
-    if (!phase6Ref.current) return;
+      const cachedInterpretation = interpretationCache.current[jobId];
 
-    phase6Ref.current.reset();
+      if (cachedInterpretation) {
+        phase6Ref.current?.restoreInterpreted(cachedInterpretation);
 
-    const hydratePayload = {
-      job_id: selectedJob.id,
-      consent: {
-        granted: true,
-        scope: "hydrate",
-        granted_at: new Date().toISOString(),
-      },
-    };
+        const explicit =
+          cachedInterpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
 
-    await handleHydration(hydratePayload);
+        setRequirements(explicit);
+        setView("structured");
+      }
+
+      return;
+    }
+
+    const hydrationRes = await fetch(
+      `/api/hydrated-job?job_id=${encodeURIComponent(jobId)}`
+    );
+
+    const hydrationData = await hydrationRes.json();
+
+    if (hydrationData?.content) {
+      setHydratedContent(hydrationData.content);
+      hydrationCache.current[jobId] = hydrationData.content;
+    } else {
+      const hydratePayload = {
+        job_id: jobId,
+        consent: {
+          granted: true,
+          scope: "hydrate",
+          granted_at: new Date().toISOString(),
+        },
+      };
+
+      await handleHydration(hydratePayload);
+    }
+
+    const interpretationRes = await fetch(
+      `/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`
+    );
+    const interpretationData = await interpretationRes.json();
+
+    if (interpretationData?.interpretation) {
+      interpretationCache.current[jobId] = interpretationData.interpretation;
+      phase6Ref.current?.restoreInterpreted(
+        interpretationData.interpretation
+      );
+
+      const explicit =
+        interpretationData.interpretation
+          ?.RequirementsAnalysis
+          ?.explicit_requirements ?? [];
+
+      setRequirements(explicit);
+      setView("structured");
+    }
   };
 
-  run();
+  loadArtifacts();
 
 }, [selectedJob]);
 
   const handleConsentRevoked = async () => {
   setRequirements([]);
   setView("raw");
-
-  if (!selectedJob) return;
-
-  const hydratePayload = {
-    job_id: selectedJob.id,
-    consent: {
-      granted: true,
-      scope: "hydrate",
-      granted_at: new Date().toISOString(),
-    },
-  };
-
-  await handleHydration(hydratePayload);
 };
  const handleConsentHandoff = async (payload: any) => {
   console.log("Phase 6 Handoff Emitted:", payload);
@@ -232,7 +265,6 @@ useEffect(() => {
       setHydratedContent(`Error: ${result.detail || result.error}`);
     } else {
       setHydratedContent(result.content);
-      setRequirements([]);
       setView("raw");
 
       console.log("Phase 5.1 Hydration complete.");
