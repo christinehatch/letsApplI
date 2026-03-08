@@ -1,5 +1,6 @@
 import sys
 import os
+import hashlib
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -108,6 +109,10 @@ class HandoffPayload(BaseModel):
 class JobStatePayload(BaseModel):
     job_id: str
     state: str
+
+
+class ReadJobPayload(BaseModel):
+    job_id: str
 
 VALID_STATES = {
     "saved",
@@ -504,6 +509,80 @@ async def handle_hydrate_job(payload: HandoffPayload):
     except Exception as e:
         print(f"Bridge Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/read-job")
+async def read_job(payload: ReadJobPayload):
+    from persistence.db import get_connection
+    from persistence.repos.hydrations_repo import HydrationsRepo
+    from state import DB_PATH
+
+    job_id = payload.job_id
+    if not job_id:
+        raise HTTPException(status_code=400, detail="Missing job_id")
+
+    conn = get_connection(DB_PATH)
+    try:
+        row = conn.execute(
+            """
+            SELECT h.raw_content
+            FROM hydrations h
+            JOIN jobs j
+              ON j.id = h.job_id
+            WHERE j.provider_job_key = ?
+            ORDER BY h.created_at DESC
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+
+        if row:
+            return {"content": row["raw_content"]}
+
+        job = conn.execute(
+            "SELECT id, url FROM jobs WHERE provider_job_key = ?",
+            (job_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    consent = ConsentPayload(
+        job_id=job_id,
+        scope="hydrate",
+        granted_at=datetime.utcnow(),
+    )
+
+    fetcher = get_fetcher(job_id, job["url"])
+    read_result = await read_job_for_ui(consent, fetcher)
+
+    if read_result.content:
+        hydration_hash = hashlib.sha256(
+            read_result.content.encode("utf-8")
+        ).hexdigest()
+        hydrator_config_hash = hashlib.sha256(
+            b"phase5.1:read-job"
+        ).hexdigest()
+
+        conn = get_connection(DB_PATH)
+        try:
+            repo = HydrationsRepo(conn)
+            repo.create_hydration(
+                job_id=job["id"],
+                hydration_hash=hydration_hash,
+                raw_content=read_result.content,
+                content_type="text/plain",
+                hydrator_version="phase5.1-read-job",
+                hydrator_config_hash=hydrator_config_hash,
+                created_at=datetime.utcnow().isoformat() + "Z",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    return {"content": read_result.content}
 
 
 
