@@ -110,12 +110,14 @@ class JobsRepo:
         role: Optional[str] = None,
         experience: Optional[str] = None,
         company: Optional[str] = None,
+        ai_filter: Optional[str] = None,
     ) -> tuple[list[dict], int]:
         where, params = self._build_discovery_where_and_params(
             location=location,
             role=role,
             experience=experience,
             company=company,
+            ai_filter=ai_filter,
         )
 
         page = max(1, page)
@@ -217,6 +219,7 @@ class JobsRepo:
         role: Optional[str],
         experience: Optional[str],
         company: Optional[str],
+        ai_filter: Optional[str],
     ) -> tuple[list[str], list]:
         where = ["is_archived = 0"]
         params: list = []
@@ -252,5 +255,17 @@ class JobsRepo:
             else:
                 where.append("LOWER(title) LIKE ?")
                 params.append(f"%{exp}%")
+
+        if ai_filter and ai_filter.strip().lower() == "ai_only":
+            where.append(
+                "COALESCE("
+                "CASE "
+                "WHEN json_valid(raw_provider_payload_json) "
+                "THEN CAST(json_extract(raw_provider_payload_json, '$.ai_relevance_score') AS REAL) "
+                "ELSE 0 "
+                "END, "
+                "0"
+                ") > 0.0"
+            )
 
         return where, params

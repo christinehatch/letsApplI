@@ -1,6 +1,7 @@
 import sys
 import os
 import hashlib
+import json
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -180,6 +181,7 @@ async def discovery_feed(
         None, description="Optional experience filter: junior | mid | senior"
     ),
     company: Optional[str] = Query(None, description="Optional company substring"),
+    ai_filter: Optional[str] = Query(None, description="Optional AI filter: ai_only"),
 ):
     from persistence.db import get_connection
     from persistence.repos.jobs_repo import JobsRepo
@@ -195,6 +197,7 @@ async def discovery_feed(
             role=_normalize_filter(role),
             experience=_normalize_filter(experience),
             company=_normalize_filter(company),
+            ai_filter=_normalize_filter(ai_filter),
         )
     finally:
         conn.close()
@@ -286,20 +289,15 @@ async def job_interpretation(
 ):
     from persistence.db import get_connection
     from persistence.repos.job_interpretation_repo import JobInterpretationRepo
-    from interpretation.phase52_interpreter import Phase52Interpreter
-    from interpretation.phase52_validator import Phase52Validator
+    from phase5.phase5_2.span_indexer import build_spans
     from state import DB_PATH
 
     conn = get_connection(DB_PATH)
     try:
         repo = JobInterpretationRepo(conn)
-        interpretation = repo.get_interpretation(job_id)
-
-        if interpretation is not None:
-            return {
-                "job_id": job_id,
-                "interpretation": interpretation,
-            }
+        record = repo.get_interpretation_record(job_id)
+        interpretation = record["interpretation"] if record else None
+        span_map = record["span_map"] if record else {}
 
         row = conn.execute(
             """
@@ -314,28 +312,60 @@ async def job_interpretation(
             (job_id,),
         ).fetchone()
 
+        if interpretation is not None:
+            if not span_map and row and row["raw_content"]:
+                span_map = {
+                    span["span_id"]: span["text"]
+                    for span in build_spans(row["raw_content"])
+                }
+            result = {
+                "job_id": job_id,
+                "interpretation": interpretation,
+                "span_map": span_map,
+            }
+            print("===== INTERPRETATION SENT TO UI =====")
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return result
+
         if not row:
-            return {
+            result = {
                 "job_id": job_id,
                 "interpretation": None,
+                "span_map": {},
             }
+            print("===== INTERPRETATION SENT TO UI =====")
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return result
 
         job_text = row["raw_content"]
 
         interpreter = Phase52Interpreter()
-        interpretation = interpreter.interpret(job_text)
+        interpretation_input = InterpretationInput(
+            job_id=job_id,
+            raw_content=job_text,
+            read_at=datetime.utcnow(),
+        )
+        interpreter.set_input(interpretation_input)
+        interpretation = interpreter.interpret()
+        span_map = interpreter.get_last_span_map()
 
-        validator = Phase52Validator()
-        interpretation = validator.validate(interpretation)
-
-        repo.save_interpretation(job_id, interpretation, "phase52-placeholder")
+        repo.save_interpretation(
+            job_id,
+            interpretation,
+            "phase52-placeholder",
+            span_map=span_map,
+        )
     finally:
         conn.close()
 
-    return {
+    result = {
         "job_id": job_id,
         "interpretation": interpretation,
+        "span_map": span_map,
     }
+    print("===== INTERPRETATION SENT TO UI =====")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return result
 
 
 @app.post("/api/job-state")
@@ -651,17 +681,24 @@ async def handle_interpret_job(payload: HandoffPayload):
         interpreter.set_input(interpretation_input)
 
         result = interpreter.interpret()
+        span_map = interpreter.get_last_span_map()
 
         conn = get_connection(DB_PATH)
         try:
             repo = JobInterpretationRepo(conn)
-            repo.save_interpretation(job_id, result, "phase52-placeholder")
+            repo.save_interpretation(
+                job_id,
+                result,
+                "phase52-placeholder",
+                span_map=span_map,
+            )
         finally:
             conn.close()
 
         return {
             "job_id": job_id,
-            "interpretation": result
+            "interpretation": result,
+            "span_map": span_map,
         }
 
     except InterpretationNotAuthorizedError as e:

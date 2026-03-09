@@ -7,6 +7,7 @@ from .errors import (
     InvalidInputSourceError,
 )
 from .llm_adapter import Phase52LLMAdapter
+from .span_indexer import build_spans
 from .shadow_logger import log_shadow_run
 
 class Phase52Interpreter:
@@ -26,6 +27,7 @@ class Phase52Interpreter:
 
     def __init__(self):
         self._input: Optional[InterpretationInput] = None
+        self._last_span_map: dict[str, str] = {}
 
     # -------------------------
     # Input lifecycle
@@ -52,10 +54,17 @@ class Phase52Interpreter:
 
         # ---- LLM Execution (Authoritative) ----
         llm_adapter = Phase52LLMAdapter()
-
-        output = llm_adapter.run(self._input.raw_content)
+        spans = build_spans(self._input.raw_content)
+        self._last_span_map = {
+            span["span_id"]: span["text"]
+            for span in spans
+        }
+        output = llm_adapter.run(self._input.raw_content, spans=spans)
 
         # ---- Structural Hash Logging ----
         log_shadow_run(self._input.job_id, output)
 
         return output
+
+    def get_last_span_map(self) -> dict[str, str]:
+        return dict(self._last_span_map)

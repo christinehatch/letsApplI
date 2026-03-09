@@ -10,8 +10,10 @@ It is responsible for:
 """
 
 import json
+from typing import Optional
 
 from src.llm.adapter import LLMAdapter, LLMAdapterError
+from .span_indexer import build_spans, format_span_prompt
 from .validator_pipeline import validate_phase52_output
 from .errors import Phase52ValidationError
 
@@ -31,7 +33,7 @@ class Phase52LLMAdapter:
     def __init__(self):
         self._llm = LLMAdapter()
 
-    def run(self, raw_content: str) -> dict:
+    def run(self, raw_content: str, spans: Optional[list[dict]] = None) -> dict:
         """
         Generate and validate Phase 5.2 output.
 
@@ -43,7 +45,8 @@ class Phase52LLMAdapter:
         - If still invalid, raise Phase52ValidationError with raw_excerpt.
         """
         system_prompt = self._build_system_prompt()
-        user_prompt = raw_content
+        base_prompt = self._build_user_prompt(raw_content, spans=spans)
+        user_prompt = base_prompt
 
         for attempt in (1, 2):
             try:
@@ -59,6 +62,15 @@ class Phase52LLMAdapter:
                     violation_detail=str(e),
                 )
 
+            print("\n\n===== RAW LLM OUTPUT =====")
+            print(json.dumps(parsed, indent=2, ensure_ascii=False))
+            print("==========================\n\n")
+
+            self._drop_empty_capability_signal_evidence(parsed)
+            print("\n\n===== POST CLEANUP OUTPUT =====")
+            print(json.dumps(parsed, indent=2, ensure_ascii=False))
+            print("===============================\n\n")
+
             # Validation is authoritative: nothing returns unless it passes.
             try:
                 validate_phase52_output(parsed, raw_content)
@@ -69,7 +81,7 @@ class Phase52LLMAdapter:
                     # Retry once with explicit correction instructions.
                     correction = self._build_retry_instruction(e)
                     user_prompt = (
-                        f"{raw_content}\n\n"
+                        f"{base_prompt}\n\n"
                         "The previous response failed validation.\n"
                         f"Validation error: {e.reason_code}: {e.violation_detail}\n"
                         f"{correction}\n"
@@ -86,7 +98,7 @@ class Phase52LLMAdapter:
                 if attempt == 1:
                     # Unknown validation/runtime path: retry once with context.
                     user_prompt = (
-                        f"{raw_content}\n\n"
+                        f"{base_prompt}\n\n"
                         "The previous response failed validation.\n"
                         f"Validation error: {str(e)}\n"
                         "Return corrected JSON only."
@@ -102,6 +114,30 @@ class Phase52LLMAdapter:
             reason_code="VALIDATION_FAILURE",
             violation_detail="Interpretation failed after retry",
         )
+
+    @staticmethod
+    def _build_user_prompt(raw_content: str, spans: Optional[list[dict]] = None) -> str:
+        spans = spans if spans is not None else build_spans(raw_content)
+        span_section = format_span_prompt(spans)
+        return (
+            "The following job posting has been segmented into spans.\n\n"
+            f"{span_section}\n\n"
+            "Use these span IDs when referencing evidence.\n\n"
+            "Job Content:\n"
+            f"{raw_content}"
+        )
+
+    @staticmethod
+    def _drop_empty_capability_signal_evidence(parsed: dict) -> None:
+        signals = parsed.get("CapabilityEmphasisSignals")
+        if not isinstance(signals, list):
+            return
+
+        parsed["CapabilityEmphasisSignals"] = [
+            s
+            for s in signals
+            if not isinstance(s, dict) or s.get("evidence_span_ids")
+        ]
 
     @staticmethod
     def _build_retry_instruction(error: Phase52ValidationError) -> str:
@@ -183,6 +219,84 @@ class Phase52LLMAdapter:
     Do NOT evaluate a candidate.
     Describe the role only.
 
+    ROLE INTERPRETATION RULES
+
+    Your task is to explain what a person working in this role would
+    generally be responsible for.
+
+    Interpret the role using evidence from the job posting.
+
+    Focus on:
+    - day-to-day responsibilities
+    - decisions the role likely makes
+    - systems, products, or domains the role interacts with
+    - the type of work environment implied by the posting
+    - the stakeholders the role collaborates with
+
+    You may synthesize responsibilities from multiple spans of evidence.
+
+    Responsibilities do NOT need to appear as explicit bullet points in
+    the job posting.
+
+    However, every claim must be grounded in evidence spans.
+
+    ROLE SUMMARY EXPECTATION
+
+    The RoleSummary must describe the real nature of the role.
+
+    It should answer:
+
+    "What would someone in this role actually spend their time doing?"
+
+    Avoid simply repeating requirement bullets.
+
+    Instead explain the responsibilities implied by the posting.
+
+    Example transformation:
+
+    Input text:
+
+    "Drive sales into BFSI enterprise accounts"
+
+    Good RoleSummary statement:
+
+    "This role focuses on building relationships with large financial
+    sector organizations and managing complex enterprise sales cycles
+    for Cloudflare's networking and security products."
+
+    CAPABILITY SIGNAL GUIDANCE
+
+    CapabilityEmphasisSignals should describe the types of work the role
+    emphasizes.
+
+    Examples:
+    - Enterprise Account Sales
+    - Network Security Solution Selling
+    - Complex B2B Sales Cycles
+    - Enterprise Relationship Management
+
+    Descriptions should explain why the capability matters in this role.
+
+    GROUNDING REQUIREMENT
+
+    Every claim must reference evidence_span_ids.
+
+    Signals may reference multiple spans.
+
+    Example:
+
+    "evidence_span_ids": ["span_3","span_8"]
+
+    STRICT LIMITS
+
+    Do NOT:
+    - evaluate a candidate
+    - give career advice
+    - recommend actions
+    - speculate beyond the job text
+
+    Interpret the role, not the candidate.
+
     You must produce structured JSON that EXACTLY matches the following schema.
 
     You must not add additional keys.
@@ -245,5 +359,9 @@ class Phase52LLMAdapter:
     - Do not provide advice.
     - Do not evaluate candidate fit.
     - Remain grounded exclusively in the provided raw_content.
+    - Evidence spans are provided above.
+    - Every evidence_span_ids entry MUST reference one of the provided span IDs.
+    - Never invent span IDs.
+    - If a claim cannot reference a valid span, omit the claim.
     - If uncertain, omit rather than speculate.
     """

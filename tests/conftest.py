@@ -22,7 +22,7 @@ def mock_phase52_llm(monkeypatch):
     so tests never call the real LLM.
     """
 
-    def fake_run(self, raw_content):
+    def fake_run(self, raw_content, spans=None):
         return {
             "schema_version": "5.2.0",
             "RoleSummary": {
