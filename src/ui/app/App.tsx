@@ -21,6 +21,7 @@ const [requirements, setRequirements] = useState<Requirement[]>([]);
 const [view, setView] = useState<'raw' | 'structured'>('raw')
     const [isReading, setIsReading] = useState(false);
 const [isInterpreting, setIsInterpreting] = useState(false);
+const [loadingArtifacts, setLoadingArtifacts] = useState(false);
 const [availableJobs, setAvailableJobs] = useState<any[]>([]);
 const [locationFilter, setLocationFilter] = useState("");
 const [roleFilter, setRoleFilter] = useState("");
@@ -69,6 +70,8 @@ useEffect(() => {
         posted_at: j.posted_at,
         provider: j.provider,
         state: j.state,
+        ai_relevance_score: j.ai_relevance_score,
+        raw_provider_payload_json: j.raw_provider_payload_json,
       }));
 
       setAvailableJobs(
@@ -166,64 +169,69 @@ useEffect(() => {
   const jobId = selectedJob.id;
 
   const loadArtifacts = async () => {
-    if (hydrationCache.current[jobId]) {
-      setHydratedContent(hydrationCache.current[jobId]);
+    setLoadingArtifacts(true);
+    try {
+      if (hydrationCache.current[jobId]) {
+        setHydratedContent(hydrationCache.current[jobId]);
 
-      const cachedInterpretation = interpretationCache.current[jobId];
+        const cachedInterpretation = interpretationCache.current[jobId];
 
-      if (cachedInterpretation) {
-        phase6Ref.current?.restoreInterpreted(cachedInterpretation);
+        if (cachedInterpretation) {
+          phase6Ref.current?.restoreInterpreted(cachedInterpretation);
+
+          const explicit =
+            cachedInterpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
+
+          setRequirements(explicit);
+          setView("structured");
+        }
+
+        return;
+      }
+
+      const hydrationRes = await fetch(
+        `/api/hydrated-job?job_id=${encodeURIComponent(jobId)}`
+      );
+
+      const hydrationData = await hydrationRes.json();
+
+      if (hydrationData?.content) {
+        setHydratedContent(hydrationData.content);
+        hydrationCache.current[jobId] = hydrationData.content;
+      } else {
+        const hydratePayload = {
+          job_id: jobId,
+          consent: {
+            granted: true,
+            scope: "hydrate",
+            granted_at: new Date().toISOString(),
+          },
+        };
+
+        await handleHydration(hydratePayload);
+      }
+
+      const interpretationRes = await fetch(
+        `/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`
+      );
+      const interpretationData = await interpretationRes.json();
+
+      if (interpretationData?.interpretation) {
+        interpretationCache.current[jobId] = interpretationData.interpretation;
+        phase6Ref.current?.restoreInterpreted(
+          interpretationData.interpretation
+        );
 
         const explicit =
-          cachedInterpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
+          interpretationData.interpretation
+            ?.RequirementsAnalysis
+            ?.explicit_requirements ?? [];
 
         setRequirements(explicit);
         setView("structured");
       }
-
-      return;
-    }
-
-    const hydrationRes = await fetch(
-      `/api/hydrated-job?job_id=${encodeURIComponent(jobId)}`
-    );
-
-    const hydrationData = await hydrationRes.json();
-
-    if (hydrationData?.content) {
-      setHydratedContent(hydrationData.content);
-      hydrationCache.current[jobId] = hydrationData.content;
-    } else {
-      const hydratePayload = {
-        job_id: jobId,
-        consent: {
-          granted: true,
-          scope: "hydrate",
-          granted_at: new Date().toISOString(),
-        },
-      };
-
-      await handleHydration(hydratePayload);
-    }
-
-    const interpretationRes = await fetch(
-      `/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`
-    );
-    const interpretationData = await interpretationRes.json();
-
-    if (interpretationData?.interpretation) {
-      interpretationCache.current[jobId] = interpretationData.interpretation;
-      phase6Ref.current?.restoreInterpreted(
-        interpretationData.interpretation
-      );
-
-      const explicit =
-        interpretationData.interpretation
-          ?.RequirementsAnalysis
-          ?.explicit_requirements ?? [];
-
-      setRequirements(explicit);
-      setView("structured");
+    } finally {
+      setLoadingArtifacts(false);
     }
   };
 
@@ -284,7 +292,7 @@ useEffect(() => {
   setIsInterpreting(true);
 
   try {
-    const response = await fetch(
+    const res = await fetch(
       "http://localhost:8000/api/interpret-job",
       {
         method: "POST",
@@ -293,12 +301,11 @@ useEffect(() => {
       }
     );
 
-    const result = await response.json();
+    const result = await res.json();
     console.log("Interpretation response:", result);
 
-    if (response.status !== 200) {
-      console.error("Interpretation error:", result.detail);
-      return;
+    if (!res.ok) {
+      throw new Error(result?.detail || "Interpretation failed");
     }
 
     const explicit =
@@ -308,10 +315,11 @@ useEffect(() => {
     setView("structured");
 
     phase6Ref.current?.completeInterpretation();
-    setIsInterpreting(false);
   } catch (error) {
-    setIsInterpreting(false);
     console.error("Interpretation failed:", error);
+    phase6Ref.current?.reset();
+  } finally {
+    setIsInterpreting(false);
   }
 };
 
@@ -711,6 +719,7 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                       ref={phase6Ref}
                       jobId={selectedJob.id}
                       jobTitle={selectedJob.title}
+                      loadingArtifacts={loadingArtifacts}
                       onConsentGranted={handleConsentHandoff}
                       onConsentRevoked={handleConsentRevoked}
                   />

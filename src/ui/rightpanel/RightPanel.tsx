@@ -41,36 +41,37 @@ export const RightPanel = forwardRef<
     []
   );
 
-  const tabButtonStyle = (active: boolean): React.CSSProperties => ({
-    padding: "8px 10px",
-    border: "1px solid #ddd",
-    borderRadius: "8px",
-    background: active ? "#f5f5f5" : "#fff",
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    flex: 1,
+    padding: "10px 12px",
+    border: "none",
+    borderBottom: active ? "2px solid #0070f3" : "2px solid transparent",
+    background: "none",
+    fontWeight: active ? 600 : 400,
     cursor: "pointer",
-    fontWeight: 600,
-    fontSize: "13px",
+    color: active ? "#0070f3" : "#555"
   });
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", gap: "8px", padding: "12px 12px 0 12px" }}>
+      <div style={{ display: "flex", padding: "12px 12px 0 12px", background: "#fafafa" }}>
         <button
           type="button"
-          style={tabButtonStyle(activeTab === "phase")}
+          style={tabStyle(activeTab === "phase")}
           onClick={() => setActiveTab("phase")}
         >
           Phase
         </button>
         <button
           type="button"
-          style={tabButtonStyle(activeTab === "chat")}
+          style={tabStyle(activeTab === "chat")}
           onClick={() => setActiveTab("chat")}
         >
           Chat
         </button>
         <button
           type="button"
-          style={tabButtonStyle(activeTab === "notes")}
+          style={tabStyle(activeTab === "notes")}
           onClick={() => setActiveTab("notes")}
         >
           Notes

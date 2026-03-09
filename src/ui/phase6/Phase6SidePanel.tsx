@@ -18,9 +18,26 @@ export type Phase6SidePanelHandle = {
 
 type ConsentScope = "interpret_job_posting";
 
+const actionButtonStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: "8px",
+  border: "1px solid #e5e7eb",
+  backgroundColor: "#f9fafb",
+  cursor: "pointer",
+  fontWeight: 500
+};
+
+const secondaryActionButtonStyle: React.CSSProperties = {
+  ...actionButtonStyle,
+  backgroundColor: "#fff",
+  color: "#555"
+};
+
 export interface Phase6SidePanelProps {
   jobId: string;
   jobTitle: string;
+  loadingArtifacts?: boolean;
   /**
    * Handoff hook to Phase 5.1.
    * Called only when state transitions to CONSENT_GRANTED.
@@ -56,7 +73,7 @@ export interface Phase6SidePanelProps {
 export const Phase6SidePanel = forwardRef<
   Phase6SidePanelHandle,
   Phase6SidePanelProps
->(function Phase6SidePanel({ jobId, jobTitle, onConsentGranted, onConsentRevoked }, ref) {
+>(function Phase6SidePanel({ jobId, jobTitle, loadingArtifacts = false, onConsentGranted, onConsentRevoked }, ref) {
   const [state, setState] = useState<Phase6State>("VIEWING");
   const [, setInterpretation] = useState<unknown | null>(null);
 
@@ -145,6 +162,9 @@ export const Phase6SidePanel = forwardRef<
       <Phase6StateRouter
         state={state}
         jobTitle={jobTitle}
+        loadingArtifacts={loadingArtifacts}
+        actionButtonStyle={actionButtonStyle}
+        secondaryActionButtonStyle={secondaryActionButtonStyle}
         onAdvance={transition}
         onRequestInterpretation={() => {
           setRequestedScope("interpret_job_posting");
@@ -162,14 +182,7 @@ export const Phase6SidePanel = forwardRef<
       transition("VIEWING");
       onConsentRevoked();
     }}
-    style={{
-      marginTop: "16px",
-      padding: "8px 12px",
-      borderRadius: "8px",
-      border: "1px solid #ddd",
-      background: "#fff",
-      cursor: "pointer",
-    }}
+    style={{ ...actionButtonStyle, marginTop: "16px" }}
   >
     Revoke Access
   </button>

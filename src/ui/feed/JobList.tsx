@@ -9,6 +9,8 @@ type Job = {
   posted_at?: string | null;
   provider?: string;
   state?: string | null;
+  ai_relevance_score?: number | null;
+  raw_provider_payload_json?: string | null;
 };
 
 type JobListProps = {

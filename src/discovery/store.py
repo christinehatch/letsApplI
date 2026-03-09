@@ -7,6 +7,7 @@ from typing import List, Tuple
 from persistence.db import get_connection, transactional
 from persistence.repos.jobs_repo import JobsRepo
 from discovery.models import DiscoveredJob
+from discovery.signals.ai_relevance import compute_ai_relevance
 import time
 from datetime import datetime, timezone
 
@@ -50,6 +51,17 @@ class DiscoveryStore:
                     # Deterministic timestamp (UTC ISO)
                     now_iso = datetime.now(timezone.utc).isoformat()
 
+                    enriched_meta = dict(job.raw_meta) if job.raw_meta else {}
+                    tags = enriched_meta.get("tags")
+                    description = getattr(job, "description", None)
+                    ai_relevance = compute_ai_relevance(
+                        title=job.title,
+                        description=description,
+                        metadata=enriched_meta,
+                        tags=tags if isinstance(tags, list) else None,
+                    )
+                    enriched_meta.update(ai_relevance)
+
                     repo.upsert_discovered_job(
                         provider=provider,
                         external_id=job.external_job_id,
@@ -61,7 +73,7 @@ class DiscoveryStore:
                         url=job.url,
                         posted_at=None,
                         discovered_at=now_iso,
-                        raw_provider_payload_json=json.dumps(job.raw_meta) if job.raw_meta else None,
+                        raw_provider_payload_json=json.dumps(enriched_meta) if enriched_meta else None,
                     )
 
                     after = conn.execute(

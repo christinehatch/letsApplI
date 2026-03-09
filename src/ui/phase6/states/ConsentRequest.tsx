@@ -3,6 +3,8 @@ import React from "react";
 interface ConsentRequestProps {
   title: string;
   description: string;
+  primaryActionButtonStyle: React.CSSProperties;
+  secondaryActionButtonStyle: React.CSSProperties;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -10,6 +12,8 @@ interface ConsentRequestProps {
 export function ConsentRequest({
   title,
   description,
+  primaryActionButtonStyle,
+  secondaryActionButtonStyle,
   onConfirm,
   onCancel,
 }: ConsentRequestProps) {
@@ -19,15 +23,18 @@ export function ConsentRequest({
 
       <p>{description}</p>
 
-      <div style={{ marginTop: "16px" }}>
+      <div style={{ marginTop: "16px", display: "flex", gap: "8px" }}>
         <button
           onClick={onConfirm}
-          style={{ marginRight: "12px" }}
+          style={{ ...primaryActionButtonStyle, flex: 1 }}
         >
           Confirm
         </button>
 
-        <button onClick={onCancel}>
+        <button
+          onClick={onCancel}
+          style={{ ...secondaryActionButtonStyle, flex: 1 }}
+        >
           Cancel
         </button>
       </div>

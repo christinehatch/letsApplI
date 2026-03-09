@@ -132,6 +132,67 @@ If provenance cannot be established, interpretation must **abort**.
 
 ---
 
+## EVIDENCE GROUNDING REQUIREMENTS
+
+### Capability Signal Evidence Rules
+
+Every `capabilityEmphasisSignal` must reference at least one evidence span
+from hydrated job text.
+
+Required structure:
+
+```json
+{
+  "capability": "example capability",
+  "evidence_span_ids": ["span_12"]
+}
+```
+
+Invalid output:
+
+```json
+{
+  "capability": "example capability",
+  "evidence_span_ids": []
+}
+```
+
+Signals with empty evidence arrays are invalid and will be rejected
+by the Phase 5.2 validator.
+
+### Signal Generation Order
+
+The interpreter must generate signals using this reasoning order:
+
+1. Identify supporting text span in the job description
+2. Assign or reference `span_id`
+3. Emit capability signal referencing that span
+
+Correct reasoning flow:
+
+`text -> span -> signal`
+
+Incorrect reasoning flow:
+
+`signal -> search for evidence`
+
+If no evidence span exists for a capability, the signal must not be emitted.
+
+### Validator Enforcement
+
+The Phase 5.2 validator enforces this rule strictly.
+
+Outputs violating this contract fail with:
+
+`SCHEMA_VIOLATION: $.capabilityEmphasisSignals[].evidence_span_ids should be non-empty`
+
+The interpreter prompt must avoid generating signals without evidence.
+
+This constraint is intentional and protects the system from
+hallucinated capability signals.
+
+---
+
 ## 7. Persistence Rules
 
 Phase 5.2 may:
@@ -186,4 +247,3 @@ This contract exists to ensure interpretation remains helpful
 without becoming prescriptive, persuasive, or misleading.
 
 **This contract defines the maximum authority of Phase 5.2 output.**
-

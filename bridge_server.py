@@ -15,6 +15,7 @@ from phase5.phase5_2.types import InterpretationInput
 from phase5.phase5_2.errors import (
     InterpretationNotAuthorizedError,
     InvalidInputSourceError,
+    Phase52ValidationError,
 )
 from discovery.summary import summarize_since
 from discovery.run_state import load_last_run
@@ -667,6 +668,26 @@ async def handle_interpret_job(payload: HandoffPayload):
         raise HTTPException(status_code=403, detail=str(e))
 
     except InvalidInputSourceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except Phase52ValidationError as e:
+        from persistence.db import get_connection
+        from persistence.repos.interpretation_attempts_repo import InterpretationAttemptsRepo
+        from state import DB_PATH
+
+        conn = get_connection(DB_PATH)
+        try:
+            repo = InterpretationAttemptsRepo(conn)
+            repo.create_attempt(
+                job_id=payload.job_id,
+                raw_llm_output=e.raw_excerpt,
+                validation_error=f"{e.reason_code}: {e.violation_detail}",
+                timestamp=datetime.utcnow().isoformat() + "Z",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
         raise HTTPException(status_code=400, detail=str(e))
 
     except HTTPException:

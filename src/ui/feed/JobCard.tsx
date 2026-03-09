@@ -8,6 +8,8 @@ type Job = {
   posted_at?: string | null;
   provider?: string;
   state?: string | null;
+  ai_relevance_score?: number | null;
+  raw_provider_payload_json?: string | null;
 };
 
 type JobCardProps = {
@@ -106,12 +108,33 @@ function stateBadgeColor(state?: string | null): string {
   return "#666";
 }
 
+function getAiRelevanceScore(job: Job): number {
+  if (typeof job.ai_relevance_score === "number") {
+    return job.ai_relevance_score;
+  }
+
+  const raw = job.raw_provider_payload_json;
+  if (!raw) {
+    return 0;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    const score = parsed?.ai_relevance_score;
+    return typeof score === "number" ? score : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function JobCard({ job, selected, onClick, onSave }: JobCardProps) {
   const SAVED_STATES = ["saved", "applied", "interview", "offer"];
   const formattedPostedDate = formatPostedDate(job.posted_at);
   const formattedProvider = formatProvider(job.provider);
   const stateLabel = formatStateLabel(job.state);
   const isSaved = SAVED_STATES.includes(job.state ?? "");
+  const aiRelevanceScore = getAiRelevanceScore(job);
+  const showAiBadge = aiRelevanceScore > 0;
 
   return (
     <div
@@ -158,7 +181,25 @@ export function JobCard({ job, selected, onClick, onSave }: JobCardProps) {
       >
         {job.company}
       </div>
-      <div style={{ fontWeight: 600, fontSize: "14px" }}>{job.title}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ fontWeight: 600, fontSize: "14px" }}>{job.title}</div>
+        {showAiBadge && (
+          <span
+            style={{
+              fontSize: "10px",
+              fontWeight: 700,
+              color: "#1f6feb",
+              backgroundColor: "#eaf2ff",
+              border: "1px solid #c7dcff",
+              borderRadius: "999px",
+              padding: "2px 7px",
+              lineHeight: 1.2,
+            }}
+          >
+            AI
+          </span>
+        )}
+      </div>
       {job.location && (
         <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>{job.location}</div>
       )}
