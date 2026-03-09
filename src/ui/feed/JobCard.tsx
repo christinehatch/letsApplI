@@ -9,7 +9,6 @@ type Job = {
   provider?: string;
   state?: string | null;
   ai_relevance_score?: number | null;
-  raw_provider_payload_json?: string | null;
 };
 
 type JobCardProps = {
@@ -108,33 +107,15 @@ function stateBadgeColor(state?: string | null): string {
   return "#666";
 }
 
-function getAiRelevanceScore(job: Job): number {
-  if (typeof job.ai_relevance_score === "number") {
-    return job.ai_relevance_score;
-  }
-
-  const raw = job.raw_provider_payload_json;
-  if (!raw) {
-    return 0;
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    const score = parsed?.ai_relevance_score;
-    return typeof score === "number" ? score : 0;
-  } catch {
-    return 0;
-  }
-}
-
 export function JobCard({ job, selected, onClick, onSave }: JobCardProps) {
   const SAVED_STATES = ["saved", "applied", "interview", "offer"];
   const formattedPostedDate = formatPostedDate(job.posted_at);
   const formattedProvider = formatProvider(job.provider);
   const stateLabel = formatStateLabel(job.state);
   const isSaved = SAVED_STATES.includes(job.state ?? "");
-  const aiRelevanceScore = getAiRelevanceScore(job);
-  const showAiBadge = aiRelevanceScore > 0;
+  const isAIRelevant =
+    typeof job.ai_relevance_score === "number" &&
+    job.ai_relevance_score >= 0.6;
 
   return (
     <div
@@ -183,20 +164,18 @@ export function JobCard({ job, selected, onClick, onSave }: JobCardProps) {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         <div style={{ fontWeight: 600, fontSize: "14px" }}>{job.title}</div>
-        {showAiBadge && (
+        {isAIRelevant && (
           <span
             style={{
-              fontSize: "10px",
-              fontWeight: 700,
-              color: "#1f6feb",
-              backgroundColor: "#eaf2ff",
-              border: "1px solid #c7dcff",
-              borderRadius: "999px",
-              padding: "2px 7px",
-              lineHeight: 1.2,
+              fontSize: "11px",
+              background: "#eef2ff",
+              color: "#4338ca",
+              padding: "2px 6px",
+              borderRadius: "6px",
+              marginLeft: "6px",
             }}
           >
-            AI
+            🧠 AI
           </span>
         )}
       </div>

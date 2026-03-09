@@ -1,9 +1,11 @@
 # src/persistence/repos/jobs_repo.py
 
+import json
 from sqlite3 import IntegrityError
 from typing import Optional
 from persistence.models import JobRecord
 from persistence.errors import JobNotFoundError
+from scoring.ai_relevance_explainer import generate_ai_relevance_explanation
 
 
 class JobsRepo:
@@ -139,10 +141,22 @@ class JobsRepo:
 
         rows = self.conn.execute(
             f"""
-            SELECT jobs.provider_job_key, jobs.company, jobs.title, jobs.location_raw, jobs.url, jobs.posted_at, jobs.provider, job_user_state.state
+            SELECT
+              jobs.provider_job_key,
+              jobs.company,
+              jobs.title,
+              jobs.location_raw,
+              jobs.url,
+              jobs.posted_at,
+              jobs.provider,
+              job_user_state.state,
+              jobs.raw_provider_payload_json,
+              ji.interpretation_json
             FROM jobs
             LEFT JOIN job_user_state
               ON jobs.provider_job_key = job_user_state.job_id
+            LEFT JOIN job_interpretations ji
+              ON jobs.provider_job_key = ji.job_id
             WHERE {' AND '.join(where)}
             ORDER BY jobs.discovered_at DESC
             LIMIT ?
@@ -153,6 +167,16 @@ class JobsRepo:
 
         jobs: list[dict] = []
         for row in rows:
+            raw_provider_payload_json = row[8]
+            interpretation_json = row[9]
+
+            ai_relevance_score = self._extract_ai_relevance_score(raw_provider_payload_json)
+            interpretation = self._safe_json_loads(interpretation_json)
+            ai_relevance_explanation = generate_ai_relevance_explanation(
+                interpretation if isinstance(interpretation, dict) else {},
+                ai_relevance_score,
+            )
+
             jobs.append(
                 {
                     "job_id": row[0],
@@ -163,6 +187,8 @@ class JobsRepo:
                     "posted_at": row[5],
                     "provider": row[6],
                     "state": row[7],
+                    "ai_relevance_score": ai_relevance_score,
+                    "ai_relevance_explanation": ai_relevance_explanation,
                 }
             )
         return jobs, total_jobs
@@ -211,6 +237,26 @@ class JobsRepo:
             "senior": ["senior", "staff", "principal"],
         }
         return mapping.get(experience, [])
+
+    @staticmethod
+    def _safe_json_loads(payload: Optional[str]):
+        if not payload:
+            return None
+        try:
+            return json.loads(payload)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+
+    def _extract_ai_relevance_score(self, raw_provider_payload_json: Optional[str]) -> float:
+        payload = self._safe_json_loads(raw_provider_payload_json)
+        if not isinstance(payload, dict):
+            return 0.0
+
+        score = payload.get("ai_relevance_score")
+        if isinstance(score, (int, float)):
+            return float(score)
+
+        return 0.0
 
     def _build_discovery_where_and_params(
         self,

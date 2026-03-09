@@ -183,6 +183,7 @@ async def discovery_feed(
     company: Optional[str] = Query(None, description="Optional company substring"),
     ai_filter: Optional[str] = Query(None, description="Optional AI filter: ai_only"),
 ):
+    from analysis.ai_relevance import score_ai_relevance
     from persistence.db import get_connection
     from persistence.repos.jobs_repo import JobsRepo
     from state import DB_PATH
@@ -199,6 +200,38 @@ async def discovery_feed(
             company=_normalize_filter(company),
             ai_filter=_normalize_filter(ai_filter),
         )
+
+        job_ids = [job.get("job_id") for job in jobs if job.get("job_id")]
+        interpretation_map: dict[str, dict] = {}
+        if job_ids:
+            placeholders = ",".join(["?"] * len(job_ids))
+            rows = conn.execute(
+                f"""
+                SELECT job_id, interpretation_json
+                FROM job_interpretations
+                WHERE job_id IN ({placeholders})
+                """,
+                tuple(job_ids),
+            ).fetchall()
+
+            for row in rows:
+                interpretation_json = row["interpretation_json"]
+                if not interpretation_json:
+                    continue
+                try:
+                    interpretation_map[row["job_id"]] = json.loads(interpretation_json)
+                except json.JSONDecodeError:
+                    continue
+
+        for job in jobs:
+            interpretation = interpretation_map.get(job.get("job_id", ""))
+            if interpretation:
+                ai_score = score_ai_relevance(interpretation)
+                job["ai_relevance_score"] = ai_score["ai_relevance_score"]
+                job["ai_relevance_level"] = ai_score["ai_relevance_level"]
+            else:
+                job["ai_relevance_score"] = None
+                job["ai_relevance_level"] = None
     finally:
         conn.close()
 
@@ -287,6 +320,7 @@ async def get_hydrated_job(
 async def job_interpretation(
     job_id: str = Query(..., description="Canonical job id"),
 ):
+    from analysis.ai_relevance import score_ai_relevance
     from persistence.db import get_connection
     from persistence.repos.job_interpretation_repo import JobInterpretationRepo
     from phase5.phase5_2.span_indexer import build_spans
@@ -318,10 +352,12 @@ async def job_interpretation(
                     span["span_id"]: span["text"]
                     for span in build_spans(row["raw_content"])
                 }
+            ai_score = score_ai_relevance(interpretation)
             result = {
                 "job_id": job_id,
                 "interpretation": interpretation,
                 "span_map": span_map,
+                "ai_relevance": ai_score,
             }
             print("===== INTERPRETATION SENT TO UI =====")
             print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -332,6 +368,7 @@ async def job_interpretation(
                 "job_id": job_id,
                 "interpretation": None,
                 "span_map": {},
+                "ai_relevance": score_ai_relevance({}),
             }
             print("===== INTERPRETATION SENT TO UI =====")
             print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -362,6 +399,7 @@ async def job_interpretation(
         "job_id": job_id,
         "interpretation": interpretation,
         "span_map": span_map,
+        "ai_relevance": score_ai_relevance(interpretation),
     }
     print("===== INTERPRETATION SENT TO UI =====")
     print(json.dumps(result, indent=2, ensure_ascii=False))
