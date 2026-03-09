@@ -440,6 +440,33 @@ const resolveEvidenceTexts = (spanIds: string[] = []): string[] => {
   return texts;
 };
 
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: "10px",
+        padding: "16px",
+        marginBottom: "16px",
+        background: "#ffffff",
+      }}
+    >
+      <div
+        style={{
+          fontWeight: 600,
+          fontSize: "15px",
+          marginBottom: "12px",
+          color: "#222",
+        }}
+      >
+        {title}
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
 function EvidenceBlock({ spanIds }: { spanIds: string[] }) {
   const [open, setOpen] = React.useState(false);
   const evidenceTexts = resolveEvidenceTexts(spanIds);
@@ -447,7 +474,7 @@ function EvidenceBlock({ spanIds }: { spanIds: string[] }) {
   if (evidenceTexts.length === 0) return null;
 
   return (
-    <div style={{ marginTop: "8px" }}>
+    <div style={{ marginTop: "6px" }}>
       <div
         style={{
           fontSize: "12px",
@@ -757,37 +784,43 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                                       hydratedContent ? renderJobContent(hydratedContent) : null
                                   ) : (
                                       interpretationResult ? (
-                                          <div style={{display: "grid", gap: "20px"}}>
-                                              <section>
-                                                  <h3 style={{margin: "0 0 8px 0"}}>Role Summary</h3>
+                                          <div style={{display: "grid", gap: "0px"}}>
+                                              <Card title="Role Summary">
                                                   <p style={{margin: 0, color: "#333"}}>
                                                       {interpretationResult?.RoleSummary?.summary_text ?? "No role summary provided."}
                                                   </p>
                                                   <EvidenceBlock spanIds={interpretationResult?.RoleSummary?.evidence_span_ids ?? []} />
-                                              </section>
+                                              </Card>
 
-                                              <section>
-                                                  <h3 style={{margin: "0 0 8px 0"}}>Requirements</h3>
+                                              <Card title="Requirements">
                                                   {requirements.length > 0 ? (
-                                                      <ul style={{paddingLeft: "20px", margin: 0}}>
+                                                      <div>
                                                           {requirements.map((req, i) => (
-                                                              <li key={i} style={{marginBottom: "12px"}}>
-                                                                  <div style={{fontWeight: 600}}>
+                                                              <div key={i} style={{ marginBottom: "12px" }}>
+                                                                  <div style={{ fontSize: "14px", fontWeight: 500 }}>
                                                                       {req.requirement_text}
                                                                   </div>
-                                                                  <div style={{fontSize: "12px", color: "#666"}}>
+                                                                  <div
+                                                                      style={{
+                                                                          fontSize: "12px",
+                                                                          color: "#6b7280",
+                                                                          marginTop: "2px",
+                                                                      }}
+                                                                  >
                                                                       Modality: {req.modality}
                                                                   </div>
                                                                   <EvidenceBlock spanIds={req.source_span_id ? [req.source_span_id] : []} />
-                                                              </li>
+                                                              </div>
                                                           ))}
-                                                      </ul>
+                                                      </div>
                                                   ) : (
                                                       <p style={{margin: 0, color: "#666"}}>No explicit requirements provided.</p>
                                                   )}
-                                                  {(interpretationResult?.RequirementsAnalysis?.implicit_signals ?? []).length > 0 && (
-                                                      <div style={{marginTop: "12px", display: "grid", gap: "10px"}}>
-                                                          <div style={{fontWeight: 600}}>Implicit Signals</div>
+                                              </Card>
+
+                                              <Card title="Implicit Signals">
+                                                  {(interpretationResult?.RequirementsAnalysis?.implicit_signals ?? []).length > 0 ? (
+                                                      <div style={{display: "grid", gap: "10px"}}>
                                                           {(interpretationResult?.RequirementsAnalysis?.implicit_signals ?? []).map((signal: any, i: number) => (
                                                               <div key={i}>
                                                                   <div style={{fontSize: "14px", color: "#444"}}>{signal.signal_text}</div>
@@ -795,16 +828,17 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                                                               </div>
                                                           ))}
                                                       </div>
+                                                  ) : (
+                                                      <p style={{margin: 0, color: "#666"}}>No implicit signals provided.</p>
                                                   )}
-                                              </section>
+                                              </Card>
 
-                                              <section>
-                                                  <h3 style={{margin: "0 0 8px 0"}}>Capability Emphasis</h3>
+                                              <Card title="Capability Emphasis">
                                                   {(interpretationResult?.CapabilityEmphasisSignals ?? []).length > 0 ? (
                                                       <div style={{display: "grid", gap: "12px"}}>
                                                           {(interpretationResult?.CapabilityEmphasisSignals ?? []).map((signal: any, i: number) => (
                                                               <div key={i}>
-                                                                  <div style={{fontWeight: 600}}>{signal.domain_label}</div>
+                                                                  <div style={{fontWeight: 500}}>🧠 {signal.domain_label}</div>
                                                                   <div style={{fontSize: "14px", color: "#444"}}>{signal.description}</div>
                                                                   <EvidenceBlock spanIds={signal.evidence_span_ids ?? []} />
                                                               </div>
@@ -813,10 +847,9 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                                                   ) : (
                                                       <p style={{margin: 0, color: "#666"}}>No capability emphasis signals provided.</p>
                                                   )}
-                                              </section>
+                                              </Card>
 
-                                              <section>
-                                                  <h3 style={{margin: "0 0 8px 0"}}>Project Opportunities</h3>
+                                              <Card title="Project Opportunities">
                                                   {(interpretationResult?.ProjectOpportunitySignals ?? []).length > 0 ? (
                                                       <div style={{display: "grid", gap: "12px"}}>
                                                           {(interpretationResult?.ProjectOpportunitySignals ?? []).map((signal: any, i: number) => (
@@ -830,7 +863,7 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                                                   ) : (
                                                       <p style={{margin: 0, color: "#666"}}>No project opportunity signals provided.</p>
                                                   )}
-                                              </section>
+                                              </Card>
                                           </div>
                                       ) : (
                                           <div style={{textAlign: 'center', padding: '40px'}}>
