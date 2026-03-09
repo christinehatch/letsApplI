@@ -18,6 +18,8 @@ export function App() {
 };
 
 const [requirements, setRequirements] = useState<Requirement[]>([]);
+const [interpretationResult, setInterpretationResult] = useState<any | null>(null);
+const [spanMap, setSpanMap] = useState<Record<string, string>>({});
 const [view, setView] = useState<'raw' | 'structured'>('raw')
     const [isReading, setIsReading] = useState(false);
 const [isInterpreting, setIsInterpreting] = useState(false);
@@ -27,6 +29,7 @@ const [locationFilter, setLocationFilter] = useState("");
 const [roleFilter, setRoleFilter] = useState("");
 const [experienceFilter, setExperienceFilter] = useState("");
 const [companyFilter, setCompanyFilter] = useState("");
+const [aiFilter, setAiFilter] = useState("");
 const [viewMode, setViewMode] = useState<"feed" | "saved">("feed");
 const [page, setPage] = useState(1);
 const [pageSize] = useState(50);
@@ -34,6 +37,7 @@ const [totalJobs, setTotalJobs] = useState(0);
 const phase6Ref = useRef<Phase6SidePanelHandle | null>(null);
 const hydrationCache = useRef<Record<string, string>>({});
 const interpretationCache = useRef<Record<string, any>>({});
+const spanMapCache = useRef<Record<string, Record<string, string>>>({});
 const [userPreviewUrl, setUserPreviewUrl] = useState<string | null>(null);
 const [previewVersion, setPreviewVersion] = useState(0);
 
@@ -47,6 +51,7 @@ useEffect(() => {
         if (roleFilter.trim()) params.set("role", roleFilter.trim());
         if (experienceFilter.trim()) params.set("experience", experienceFilter.trim());
         if (companyFilter.trim()) params.set("company", companyFilter.trim());
+        if (aiFilter.trim()) params.set("ai_filter", aiFilter.trim());
         params.set("page", String(page));
         params.set("page_size", String(pageSize));
         const query = params.toString();
@@ -85,11 +90,11 @@ useEffect(() => {
   };
 
   fetchJobs();
-}, [viewMode, locationFilter, roleFilter, experienceFilter, companyFilter, page, pageSize]);
+}, [viewMode, locationFilter, roleFilter, experienceFilter, companyFilter, aiFilter, page, pageSize]);
 
 useEffect(() => {
   setPage(1);
-}, [locationFilter, roleFilter, experienceFilter, companyFilter]);
+}, [locationFilter, roleFilter, experienceFilter, companyFilter, aiFilter]);
 
 useEffect(() => {
   setPage(1);
@@ -111,6 +116,8 @@ const pipelineJobs = PIPELINE_STATES.reduce((acc: Record<string, any[]>, state) 
   setSelectedJob(job);
   setHydratedContent(null);
   setRequirements([]);
+  setInterpretationResult(null);
+  setSpanMap({});
   setView("raw");
   setUserPreviewUrl(null);
 };
@@ -175,8 +182,11 @@ useEffect(() => {
         setHydratedContent(hydrationCache.current[jobId]);
 
         const cachedInterpretation = interpretationCache.current[jobId];
+        const cachedSpanMap = spanMapCache.current[jobId];
 
         if (cachedInterpretation) {
+          setInterpretationResult(cachedInterpretation);
+          setSpanMap(cachedSpanMap ?? {});
           phase6Ref.current?.restoreInterpreted(cachedInterpretation);
 
           const explicit =
@@ -215,8 +225,15 @@ useEffect(() => {
         `/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`
       );
       const interpretationData = await interpretationRes.json();
+      const fetchedSpanMap =
+        interpretationData?.span_map && typeof interpretationData.span_map === "object"
+          ? interpretationData.span_map
+          : {};
+      setSpanMap(fetchedSpanMap);
+      spanMapCache.current[jobId] = fetchedSpanMap;
 
       if (interpretationData?.interpretation) {
+        setInterpretationResult(interpretationData.interpretation);
         interpretationCache.current[jobId] = interpretationData.interpretation;
         phase6Ref.current?.restoreInterpreted(
           interpretationData.interpretation
@@ -241,6 +258,8 @@ useEffect(() => {
 
   const handleConsentRevoked = async () => {
   setRequirements([]);
+  setInterpretationResult(null);
+  setSpanMap({});
   setView("raw");
 };
  const handleConsentHandoff = async (payload: any) => {
@@ -311,6 +330,11 @@ useEffect(() => {
     const explicit =
       result.interpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
 
+    setInterpretationResult(result.interpretation ?? null);
+    if (result?.span_map && typeof result.span_map === "object" && selectedJob?.id) {
+      setSpanMap(result.span_map);
+      spanMapCache.current[selectedJob.id] = result.span_map;
+    }
     setRequirements(explicit);
     setView("structured");
 
@@ -404,6 +428,60 @@ const renderJobContent = (content: string) => {
   );
 };
 
+const resolveEvidenceTexts = (spanIds: string[] = []): string[] => {
+  const seen = new Set<string>();
+  const texts: string[] = [];
+  for (const id of spanIds) {
+    const text = spanMap[id];
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    texts.push(text);
+  }
+  return texts;
+};
+
+function EvidenceBlock({ spanIds }: { spanIds: string[] }) {
+  const [open, setOpen] = React.useState(false);
+  const evidenceTexts = resolveEvidenceTexts(spanIds);
+
+  if (evidenceTexts.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: "8px" }}>
+      <div
+        style={{
+          fontSize: "12px",
+          fontWeight: 600,
+          color: "#666",
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+        onClick={() => setOpen(!open)}
+      >
+        Evidence ({evidenceTexts.length}) {open ? "▲" : "▼"}
+      </div>
+
+      {open && (
+        <ul style={{ marginTop: "6px", paddingLeft: "18px" }}>
+          {evidenceTexts.map((text, i) => (
+            <li
+              key={i}
+              style={{
+                fontSize: "13px",
+                color: "#555",
+                marginBottom: "4px",
+                lineHeight: "1.4",
+              }}
+            >
+              {text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
 
   return (
@@ -444,12 +522,14 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                   role: roleFilter,
                   company: companyFilter,
                   experience: experienceFilter,
+                  aiFilter,
               }}
               setFilters={{
                   setLocationFilter,
                   setRoleFilter,
                   setCompanyFilter,
                   setExperienceFilter,
+                  setAiFilter,
               }}
               page={page}
               setPage={setPage}
@@ -651,15 +731,15 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                               <div style={{display: "flex", gap: "10px", marginBottom: "16px"}}>
 
                                   <button
-                                      disabled={requirements.length === 0}
+                                      disabled={!interpretationResult}
                                       onClick={() => setView("structured")}
                                       style={{
                                           ...tabStyle(view === "structured"),
-                                          opacity: requirements.length === 0 ? 0.4 : 1,
-                                          cursor: requirements.length === 0 ? "not-allowed" : "pointer"
+                                          opacity: interpretationResult ? 1 : 0.4,
+                                          cursor: interpretationResult ? "pointer" : "not-allowed"
                                       }}
                                   >
-                                      {requirements.length === 0
+                                      {!interpretationResult
                                           ? "Structured Interpretation (Disabled)"
                                           : "Structured Interpretation (5.2)"}
                                   </button>
@@ -676,19 +756,82 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                                   {view === 'raw' ? (
                                       hydratedContent ? renderJobContent(hydratedContent) : null
                                   ) : (
-                                      requirements.length > 0 ? (
-                                          <ul style={{paddingLeft: "20px"}}>
-                                              {requirements.map((req, i) => (
-                                                  <li key={i} style={{marginBottom: "12px"}}>
-                                                  <div style={{fontWeight: 600}}>
-                                                          {req.requirement_text}
+                                      interpretationResult ? (
+                                          <div style={{display: "grid", gap: "20px"}}>
+                                              <section>
+                                                  <h3 style={{margin: "0 0 8px 0"}}>Role Summary</h3>
+                                                  <p style={{margin: 0, color: "#333"}}>
+                                                      {interpretationResult?.RoleSummary?.summary_text ?? "No role summary provided."}
+                                                  </p>
+                                                  <EvidenceBlock spanIds={interpretationResult?.RoleSummary?.evidence_span_ids ?? []} />
+                                              </section>
+
+                                              <section>
+                                                  <h3 style={{margin: "0 0 8px 0"}}>Requirements</h3>
+                                                  {requirements.length > 0 ? (
+                                                      <ul style={{paddingLeft: "20px", margin: 0}}>
+                                                          {requirements.map((req, i) => (
+                                                              <li key={i} style={{marginBottom: "12px"}}>
+                                                                  <div style={{fontWeight: 600}}>
+                                                                      {req.requirement_text}
+                                                                  </div>
+                                                                  <div style={{fontSize: "12px", color: "#666"}}>
+                                                                      Modality: {req.modality}
+                                                                  </div>
+                                                                  <EvidenceBlock spanIds={req.source_span_id ? [req.source_span_id] : []} />
+                                                              </li>
+                                                          ))}
+                                                      </ul>
+                                                  ) : (
+                                                      <p style={{margin: 0, color: "#666"}}>No explicit requirements provided.</p>
+                                                  )}
+                                                  {(interpretationResult?.RequirementsAnalysis?.implicit_signals ?? []).length > 0 && (
+                                                      <div style={{marginTop: "12px", display: "grid", gap: "10px"}}>
+                                                          <div style={{fontWeight: 600}}>Implicit Signals</div>
+                                                          {(interpretationResult?.RequirementsAnalysis?.implicit_signals ?? []).map((signal: any, i: number) => (
+                                                              <div key={i}>
+                                                                  <div style={{fontSize: "14px", color: "#444"}}>{signal.signal_text}</div>
+                                                                  <EvidenceBlock spanIds={signal.evidence_span_ids ?? []} />
+                                                              </div>
+                                                          ))}
                                                       </div>
-                                                      <div style={{fontSize: "12px", color: "#666"}}>
-                                                          Modality: {req.modality}
+                                                  )}
+                                              </section>
+
+                                              <section>
+                                                  <h3 style={{margin: "0 0 8px 0"}}>Capability Emphasis</h3>
+                                                  {(interpretationResult?.CapabilityEmphasisSignals ?? []).length > 0 ? (
+                                                      <div style={{display: "grid", gap: "12px"}}>
+                                                          {(interpretationResult?.CapabilityEmphasisSignals ?? []).map((signal: any, i: number) => (
+                                                              <div key={i}>
+                                                                  <div style={{fontWeight: 600}}>{signal.domain_label}</div>
+                                                                  <div style={{fontSize: "14px", color: "#444"}}>{signal.description}</div>
+                                                                  <EvidenceBlock spanIds={signal.evidence_span_ids ?? []} />
+                                                              </div>
+                                                          ))}
                                                       </div>
-                                                  </li>
-                                              ))}
-                                          </ul>
+                                                  ) : (
+                                                      <p style={{margin: 0, color: "#666"}}>No capability emphasis signals provided.</p>
+                                                  )}
+                                              </section>
+
+                                              <section>
+                                                  <h3 style={{margin: "0 0 8px 0"}}>Project Opportunities</h3>
+                                                  {(interpretationResult?.ProjectOpportunitySignals ?? []).length > 0 ? (
+                                                      <div style={{display: "grid", gap: "12px"}}>
+                                                          {(interpretationResult?.ProjectOpportunitySignals ?? []).map((signal: any, i: number) => (
+                                                              <div key={i}>
+                                                                  <div style={{fontWeight: 600}}>{signal.capability_surface}</div>
+                                                                  <div style={{fontSize: "14px", color: "#444"}}>{signal.description}</div>
+                                                                  <EvidenceBlock spanIds={signal.evidence_span_ids ?? []} />
+                                                              </div>
+                                                          ))}
+                                                      </div>
+                                                  ) : (
+                                                      <p style={{margin: 0, color: "#666"}}>No project opportunity signals provided.</p>
+                                                  )}
+                                              </section>
+                                          </div>
                                       ) : (
                                           <div style={{textAlign: 'center', padding: '40px'}}>
                                               <h3 style={{color: '#333'}}>Waiting for Analysis Authorization</h3>

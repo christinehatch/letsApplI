@@ -5,6 +5,7 @@ type FeedFiltersValues = {
   role: string;
   experience: string;
   company: string;
+  aiFilter: string;
 };
 
 type FeedFiltersSetters = {
@@ -12,6 +13,7 @@ type FeedFiltersSetters = {
   setRoleFilter: (value: string) => void;
   setExperienceFilter: (value: string) => void;
   setCompanyFilter: (value: string) => void;
+  setAiFilter: (value: string) => void;
 };
 
 type FeedFiltersProps = {
@@ -85,6 +87,14 @@ export function FeedFilters({ filters, setFilters, viewMode, setViewMode }: Feed
             onChange={(e) => setFilters.setCompanyFilter(e.target.value)}
             style={{ padding: "8px 10px", border: "1px solid #ddd", borderRadius: "8px" }}
           />
+          <select
+            value={filters.aiFilter}
+            onChange={(e) => setFilters.setAiFilter(e.target.value)}
+            style={{ padding: "8px 10px", border: "1px solid #ddd", borderRadius: "8px" }}
+          >
+            <option value="">All jobs</option>
+            <option value="ai_only">AI-only jobs</option>
+          </select>
         </div>
       )}
     </div>

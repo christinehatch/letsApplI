@@ -28,12 +28,14 @@ type FeedSidebarProps = {
     role: string;
     company: string;
     experience: string;
+    aiFilter: string;
   };
   setFilters: {
     setLocationFilter: (value: string) => void;
     setRoleFilter: (value: string) => void;
     setCompanyFilter: (value: string) => void;
     setExperienceFilter: (value: string) => void;
+    setAiFilter: (value: string) => void;
   };
   page: number;
   setPage: React.Dispatch<React.SetStateAction<number>>;
