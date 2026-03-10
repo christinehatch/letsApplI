@@ -1,5 +1,6 @@
 import sqlite3
 import tempfile
+import json
 
 from persistence.migrate import migrate
 from persistence.repos.jobs_repo import JobsRepo
@@ -143,3 +144,27 @@ def test_discovery_feed_multiple_filters_combined():
     assert len(jobs) == 1
     assert total_jobs == 1
     assert jobs[0]["job_id"] == "lever:openai:2"
+
+
+def test_discovery_feed_filter_by_signal_uses_persisted_signals():
+    conn = _create_db_with_jobs()
+    repo = JobsRepo(conn)
+
+    conn.execute(
+        """
+        UPDATE jobs
+        SET raw_provider_payload_json = ?
+        WHERE provider_job_key = ?
+        """,
+        (
+            json.dumps({"signals": ["product"]}),
+            "lever:github:4",
+        ),
+    )
+    conn.commit()
+
+    jobs, total_jobs = repo.list_discovery_feed_jobs(signal="product")
+
+    assert total_jobs == 1
+    assert [j["job_id"] for j in jobs] == ["lever:github:4"]
+    assert jobs[0]["signals"] == ["product"]

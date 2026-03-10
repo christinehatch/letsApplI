@@ -6,6 +6,7 @@ from typing import Optional
 from persistence.models import JobRecord
 from persistence.errors import JobNotFoundError
 from scoring.ai_relevance_explainer import generate_ai_relevance_explanation
+from discovery.title_signal_extractor import extract_title_signals
 
 
 class JobsRepo:
@@ -113,6 +114,8 @@ class JobsRepo:
         experience: Optional[str] = None,
         company: Optional[str] = None,
         ai_filter: Optional[str] = None,
+        signal: Optional[str] = None,
+        signals: Optional[list[str]] = None,
     ) -> tuple[list[dict], int]:
         where, params = self._build_discovery_where_and_params(
             location=location,
@@ -120,6 +123,8 @@ class JobsRepo:
             experience=experience,
             company=company,
             ai_filter=ai_filter,
+            signal=signal,
+            signals=signals,
         )
 
         page = max(1, page)
@@ -176,6 +181,10 @@ class JobsRepo:
                 interpretation if isinstance(interpretation, dict) else {},
                 ai_relevance_score,
             )
+            signals = self._extract_persisted_signals(
+                raw_provider_payload_json=raw_provider_payload_json,
+                title=row[2] or "",
+            )
 
             jobs.append(
                 {
@@ -189,6 +198,7 @@ class JobsRepo:
                     "state": row[7],
                     "ai_relevance_score": ai_relevance_score,
                     "ai_relevance_explanation": ai_relevance_explanation,
+                    "signals": signals,
                 }
             )
         return jobs, total_jobs
@@ -266,6 +276,8 @@ class JobsRepo:
         experience: Optional[str],
         company: Optional[str],
         ai_filter: Optional[str],
+        signal: Optional[str],
+        signals: Optional[list[str]],
     ) -> tuple[list[str], list]:
         where = ["is_archived = 0"]
         params: list = []
@@ -314,4 +326,50 @@ class JobsRepo:
                 ") > 0.0"
             )
 
+        selected_signals: list[str] = []
+        if signals:
+            selected_signals.extend(
+                [s.strip().lower() for s in signals if isinstance(s, str) and s.strip()]
+            )
+        if signal and signal.strip():
+            selected_signals.append(signal.strip().lower())
+        selected_signals = list(dict.fromkeys(selected_signals))
+
+        if selected_signals:
+            placeholders = ", ".join(["?"] * len(selected_signals))
+            where.append(
+                "EXISTS ("
+                "SELECT 1 "
+                "FROM json_each("
+                "CASE WHEN json_valid(raw_provider_payload_json) "
+                "THEN raw_provider_payload_json "
+                "ELSE '{}' END, "
+                "'$.signals'"
+                ") "
+                f"WHERE LOWER(CAST(json_each.value AS TEXT)) IN ({placeholders})"
+                ")"
+            )
+            params.extend(selected_signals)
+
         return where, params
+
+    def _extract_persisted_signals(
+        self,
+        *,
+        raw_provider_payload_json: Optional[str],
+        title: str,
+    ) -> list[str]:
+        payload = self._safe_json_loads(raw_provider_payload_json)
+        if isinstance(payload, dict):
+            raw_signals = payload.get("signals")
+            if isinstance(raw_signals, list):
+                normalized = [
+                    str(signal).strip().lower()
+                    for signal in raw_signals
+                    if str(signal).strip()
+                ]
+                if normalized:
+                    return normalized
+
+        # Backward compatibility for older rows that predate stored title signals.
+        return extract_title_signals(title)

@@ -1,8 +1,14 @@
 import React, { useState, useRef, useEffect } from "react";
 import { type Phase6SidePanelHandle } from "../phase6/Phase6SidePanel";
 import { FeedSidebar } from "../feed/FeedSidebar";
-import { JobCard } from "../feed/JobCard";
+import { isLikelyAiRole, JobCard } from "../feed/JobCard";
+import { SavedJobsBoard } from "../feed/SavedJobsBoard";
 import { RightPanel } from "../rightpanel/RightPanel";
+import {
+  buildSignalConstellation,
+  CONSTELLATION_GROUP_SIGNALS,
+  type ConstellationGroup,
+} from "../feed/signal_constellation";
 
 const PIPELINE_STATES = ["saved", "applied", "interview", "offer"];
 const SAVED_STATES = PIPELINE_STATES;
@@ -21,6 +27,10 @@ const [requirements, setRequirements] = useState<Requirement[]>([]);
 const [interpretationResult, setInterpretationResult] = useState<any | null>(null);
 const [spanMap, setSpanMap] = useState<Record<string, string>>({});
 const [view, setView] = useState<'raw' | 'structured'>('raw')
+const [hydrationUiState, setHydrationUiState] = useState<"READY" | "HYDRATION_BLOCKED">("READY");
+const [hydrationIncomplete, setHydrationIncomplete] = useState(false);
+const [manualRawContent, setManualRawContent] = useState("");
+const [additionalContext, setAdditionalContext] = useState("");
     const [isReading, setIsReading] = useState(false);
 const [isInterpreting, setIsInterpreting] = useState(false);
 const [loadingArtifacts, setLoadingArtifacts] = useState(false);
@@ -29,7 +39,8 @@ const [locationFilter, setLocationFilter] = useState("");
 const [roleFilter, setRoleFilter] = useState("");
 const [experienceFilter, setExperienceFilter] = useState("");
 const [companyFilter, setCompanyFilter] = useState("");
-const [aiFilter, setAiFilter] = useState("");
+const [signalsFilter, setSignalsFilter] = useState<string[]>([]);
+const [aiOnly, setAiOnly] = useState(false);
 const [viewMode, setViewMode] = useState<"feed" | "saved">("feed");
 const [page, setPage] = useState(1);
 const [pageSize] = useState(50);
@@ -51,7 +62,9 @@ useEffect(() => {
         if (roleFilter.trim()) params.set("role", roleFilter.trim());
         if (experienceFilter.trim()) params.set("experience", experienceFilter.trim());
         if (companyFilter.trim()) params.set("company", companyFilter.trim());
-        if (aiFilter.trim()) params.set("ai_filter", aiFilter.trim());
+        if (signalsFilter.length > 0) {
+          params.set("signals", signalsFilter.join(","));
+        }
         params.set("page", String(page));
         params.set("page_size", String(pageSize));
         const query = params.toString();
@@ -72,11 +85,13 @@ useEffect(() => {
         company: j.company,
         location: j.location,
         url: j.url,
+        first_seen_at: j.first_seen_at,
         posted_at: j.posted_at,
         provider: j.provider,
         state: j.state,
         ai_relevance_score: j.ai_relevance_score,
         raw_provider_payload_json: j.raw_provider_payload_json,
+        signals: Array.isArray(j.signals) ? j.signals : [],
       }));
 
       setAvailableJobs(
@@ -90,11 +105,11 @@ useEffect(() => {
   };
 
   fetchJobs();
-}, [viewMode, locationFilter, roleFilter, experienceFilter, companyFilter, aiFilter, page, pageSize]);
+}, [viewMode, locationFilter, roleFilter, experienceFilter, companyFilter, signalsFilter, page, pageSize]);
 
 useEffect(() => {
   setPage(1);
-}, [locationFilter, roleFilter, experienceFilter, companyFilter, aiFilter]);
+}, [locationFilter, roleFilter, experienceFilter, companyFilter, signalsFilter]);
 
 useEffect(() => {
   setPage(1);
@@ -105,6 +120,24 @@ const pipelineJobs = PIPELINE_STATES.reduce((acc: Record<string, any[]>, state) 
   acc[state] = availableJobs.filter((job) => job.state === state);
   return acc;
 }, {});
+const visibleJobs =
+  aiOnly && viewMode === "feed"
+    ? availableJobs.filter((job) => isLikelyAiRole(job.title))
+    : availableJobs;
+const constellation = buildSignalConstellation(visibleJobs);
+const CONSTELLATION_LABELS: Record<ConstellationGroup, string> = {
+  ai_ml: "AI / ML",
+  engineering: "Engineering",
+  data: "Data",
+  product: "Product",
+  security: "Security",
+};
+const activeConstellation = (Object.keys(CONSTELLATION_GROUP_SIGNALS) as ConstellationGroup[]).find(
+  (group) => {
+    const expected = CONSTELLATION_GROUP_SIGNALS[group];
+    return expected.length === signalsFilter.length && expected.every((signal) => signalsFilter.includes(signal));
+  }
+);
 
  // --- Handlers ---
  const handleJobSelect = (job: any) => {
@@ -112,9 +145,20 @@ const pipelineJobs = PIPELINE_STATES.reduce((acc: Record<string, any[]>, state) 
     setSelectedJob(null);
     return;
   }
+  const cachedHydration = hydrationCache.current[job.id];
   phase6Ref.current?.reset();
   setSelectedJob(job);
-  setHydratedContent(null);
+  if (cachedHydration) {
+    setHydratedContent(cachedHydration);
+    setHydrationIncomplete(looksIncomplete(cachedHydration));
+  } else {
+    setHydratedContent(null);
+    setHydrationIncomplete(false);
+  }
+  setIsReading(false);
+  setHydrationUiState("READY");
+  setManualRawContent("");
+  setAdditionalContext("");
   setRequirements([]);
   setInterpretationResult(null);
   setSpanMap({});
@@ -171,6 +215,13 @@ const pipelineJobs = PIPELINE_STATES.reduce((acc: Record<string, any[]>, state) 
   await handleUpdateJobState(jobId, targetState);
 };
 
+const applyDomainFilter = (domain: ConstellationGroup) => {
+  setViewMode("feed");
+  setSignalsFilter(CONSTELLATION_GROUP_SIGNALS[domain]);
+  setSelectedJob(null);
+  setPage(1);
+};
+
 useEffect(() => {
   if (!selectedJob) return;
   const jobId = selectedJob.id;
@@ -180,6 +231,7 @@ useEffect(() => {
     try {
       if (hydrationCache.current[jobId]) {
         setHydratedContent(hydrationCache.current[jobId]);
+        setHydrationIncomplete(looksIncomplete(hydrationCache.current[jobId]));
 
         const cachedInterpretation = interpretationCache.current[jobId];
         const cachedSpanMap = spanMapCache.current[jobId];
@@ -207,6 +259,7 @@ useEffect(() => {
 
       if (hydrationData?.content) {
         setHydratedContent(hydrationData.content);
+        setHydrationIncomplete(looksIncomplete(hydrationData.content));
         hydrationCache.current[jobId] = hydrationData.content;
       } else {
         const hydratePayload = {
@@ -291,18 +344,132 @@ useEffect(() => {
 
 
     if (result.detail || result.error) {
-      setHydratedContent(`Error: ${result.detail || result.error}`);
+      setHydratedContent(null);
+      setHydrationIncomplete(false);
+      setHydrationUiState("HYDRATION_BLOCKED");
+    } else if (result.content && !isBlockedHydrationContent(result.content)) {
+        setHydratedContent(result.content);
+        setHydrationIncomplete(looksIncomplete(result.content));
+        if (payload?.job_id) {
+          hydrationCache.current[payload.job_id] = result.content;
+        }
+        setHydrationUiState("READY");
+        setView("raw");
+        console.log("Phase 5.1 Hydration complete.");
     } else {
-      setHydratedContent(result.content);
-      setView("raw");
-
-      console.log("Phase 5.1 Hydration complete.");
-
+      setHydratedContent(null);
+      setHydrationIncomplete(false);
+      setHydrationUiState("HYDRATION_BLOCKED");
     }
   } catch (error) {
     console.error("Hydration failed:", error);
+    setHydratedContent(null);
+    setHydrationIncomplete(false);
+    setHydrationUiState("HYDRATION_BLOCKED");
   } finally {
     setIsReading(false);
+  }
+};
+
+const handleManualInterpretation = async () => {
+  const raw = manualRawContent.trim();
+  if (!raw) return;
+
+  setIsInterpreting(true);
+  try {
+    const res = await fetch(
+      "http://localhost:8000/api/interpret-manual",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw_content: raw }),
+      }
+    );
+
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result?.detail || "Manual interpretation failed");
+    }
+
+    const explicit =
+      result.interpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
+
+    setHydratedContent(raw);
+    setHydrationIncomplete(looksIncomplete(raw));
+    setHydrationUiState("READY");
+    if (selectedJob?.id) {
+      hydrationCache.current[selectedJob.id] = raw;
+    }
+    setManualRawContent("");
+    setInterpretationResult(result.interpretation ?? null);
+    if (result?.span_map && typeof result.span_map === "object" && selectedJob?.id) {
+      setSpanMap(result.span_map);
+      spanMapCache.current[selectedJob.id] = result.span_map;
+    }
+    setRequirements(explicit);
+    setView("structured");
+    phase6Ref.current?.completeInterpretation();
+  } catch (error) {
+    console.error("Manual interpretation failed:", error);
+  } finally {
+    setIsInterpreting(false);
+  }
+};
+
+const handleReinterpretWithContext = async () => {
+  if (!additionalContext.trim()) return;
+
+  const combinedContent =
+    (hydratedContent || "") +
+    "\n\n--- USER ADDED CONTEXT ---\n\n" +
+    additionalContext;
+
+  setIsInterpreting(true);
+  try {
+    const res = await fetch("http://localhost:8000/api/interpret-manual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ raw_content: combinedContent }),
+    });
+
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result?.detail || "Re-interpretation with context failed");
+    }
+
+    const interpretation = result.interpretation ?? null;
+    const explicit = interpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
+
+    setInterpretationResult(interpretation);
+    setRequirements(explicit);
+
+    if (result?.span_map && typeof result.span_map === "object") {
+      setSpanMap(result.span_map);
+      if (selectedJob?.id) {
+        spanMapCache.current[selectedJob.id] = result.span_map;
+      }
+    } else {
+      setSpanMap({});
+      if (selectedJob?.id) {
+        spanMapCache.current[selectedJob.id] = {};
+      }
+    }
+
+    if (selectedJob?.id) {
+      interpretationCache.current[selectedJob.id] = interpretation;
+    }
+
+    setHydratedContent(combinedContent);
+    setHydrationIncomplete(looksIncomplete(combinedContent));
+    if (selectedJob?.id) {
+      hydrationCache.current[selectedJob.id] = combinedContent;
+    }
+    setView("structured");
+    phase6Ref.current?.completeInterpretation();
+  } catch (error) {
+    console.error("Re-interpretation with context failed:", error);
+  } finally {
+    setIsInterpreting(false);
   }
 };
 
@@ -428,6 +595,51 @@ const renderJobContent = (content: string) => {
   );
 };
 
+function isBlockedHydrationContent(content: string | null | undefined): boolean {
+  if (!content) return false;
+
+  const text = content.toLowerCase();
+  const patterns = [
+    "sorry, you have been blocked",
+    "you are unable to access",
+    "performance & security by cloudflare",
+    "attention required!",
+    "checking your browser before accessing",
+    "cloudflare ray id",
+    "why have i been blocked?",
+  ];
+
+  return patterns.some((pattern) => text.includes(pattern));
+}
+
+function looksIncomplete(content: string): boolean {
+  if (!content) return true;
+
+  const text = content.toLowerCase();
+
+  const navSignals = [
+    "privacy policy",
+    "terms",
+    "contact us",
+    "press",
+    "careers",
+    "blog",
+    "resources",
+    "help",
+    "©"
+  ];
+
+  let navHits = 0;
+
+  navSignals.forEach(signal => {
+    if (text.includes(signal)) navHits++;
+  });
+
+  const shortContent = content.length < 1200;
+
+  return shortContent || navHits >= 3;
+}
+
 const resolveEvidenceTexts = (spanIds: string[] = []): string[] => {
   const seen = new Set<string>();
   const texts: string[] = [];
@@ -535,10 +747,10 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
           <FeedSidebar
               jobs={
                   viewMode === "saved"
-                      ? availableJobs.filter((job) =>
+                      ? visibleJobs.filter((job) =>
                           SAVED_STATES.includes(job.state ?? "")
                       )
-                      : availableJobs
+                      : visibleJobs
               }
               selectedJob={selectedJob}
               onSelectJob={handleJobSelect}
@@ -550,14 +762,16 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                   role: roleFilter,
                   company: companyFilter,
                   experience: experienceFilter,
-                  aiFilter,
+                  signals: signalsFilter,
+                  aiOnly,
               }}
               setFilters={{
                   setLocationFilter,
                   setRoleFilter,
                   setCompanyFilter,
                   setExperienceFilter,
-                  setAiFilter,
+                  setSignalsFilter,
+                  setAiOnly,
               }}
               page={page}
               setPage={setPage}
@@ -575,42 +789,79 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
               flexDirection: "column"
           }}>
               {viewMode === "saved" && !selectedJob ? (
-                  <div
-                      style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(4, 1fr)",
-                          gap: "12px",
-                      }}
-                  >
-                      {PIPELINE_STATES.map((state) => (
-                          <div
-                              key={state}
-                              style={{
-                                  background: "#fafafa",
-                                  border: "1px solid #eee",
-                                  borderRadius: "8px",
-                                  padding: "10px",
-                              }}
-                          >
-                              <h4 style={{ marginBottom: "10px", textTransform: "capitalize" }}>
-                                  {state}
-                              </h4>
-                              {pipelineJobs[state]?.map((job) => (
-                                  <JobCard
-                                      key={job.id}
-                                      job={job}
-                                      selected={selectedJob?.id === job.id}
-                                      onClick={() => handleJobSelect(job)}
-                                      onSave={() => handleSaveJob(job.id, job.state)}
-                                  />
-                              ))}
-                          </div>
-                      ))}
-                  </div>
+                  <SavedJobsBoard
+                      jobsByState={pipelineJobs}
+                      selectedJob={selectedJob}
+                      onSelectJob={handleJobSelect}
+                      onSaveJob={handleSaveJob}
+                      onUpdateJobState={handleUpdateJobState}
+                  />
               ) : !selectedJob ? (
-                  <div style={{textAlign: "center", marginTop: "100px", color: "#666"}}>
-                      <h1>letsA(ppl)I Discovery</h1>
-                      <p>Select a job from your daily feed to begin exploration.</p>
+                  <div style={{ marginTop: "40px", color: "#333" }}>
+                      <h1 style={{ marginBottom: "8px" }}>Explore Roles</h1>
+                      <p style={{ color: "#666", marginBottom: "20px" }}>
+                        Explore matching roles or select a job to analyze.
+                      </p>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(3, 1fr)",
+                          gap: "12px",
+                        }}
+                      >
+                        {([
+                          "engineering",
+                          "ai_ml",
+                          "data",
+                          "product",
+                          "security",
+                        ] as ConstellationGroup[]).map((domain) => (
+                          <div
+                            key={domain}
+                            onClick={() => applyDomainFilter(domain)}
+                            style={{
+                              padding: "16px",
+                              borderRadius: "10px",
+                              border: "1px solid #eee",
+                              cursor: "pointer",
+                              background: "#fafafa",
+                            }}
+                          >
+                            <div style={{ fontWeight: 600 }}>
+                              {domain === "ai_ml" ? "AI / ML" : domain.replace("_", " ").toUpperCase()} ({constellation[domain].length})
+                            </div>
+                            <div style={{ fontSize: "12px", color: "#777" }}>
+                              Explore roles
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {viewMode === "feed" && (
+                        <div style={{ marginTop: "20px" }}>
+                          {activeConstellation && (
+                            <div style={{ fontSize: "13px", color: "#666", marginBottom: "10px" }}>
+                              Exploring: {CONSTELLATION_LABELS[activeConstellation]}
+                            </div>
+                          )}
+                          {visibleJobs.length > 0 ? (
+                            <div>
+                              {visibleJobs.map((job: any) => (
+                                <JobCard
+                                  key={job.id}
+                                  job={job}
+                                  selected={false}
+                                  onClick={() => handleJobSelect(job)}
+                                  onSave={() => handleSaveJob(job.id, job.state)}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: "13px", color: "#777" }}>
+                              No jobs match the current filters.
+                            </div>
+                          )}
+                        </div>
+                      )}
                   </div>
               ) : (
                   <>
@@ -741,7 +992,73 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                               View on Company Site
                           </a>
                       </div>
-                      {!hydratedContent ? (
+                      {hydrationUiState === "HYDRATION_BLOCKED" ? (
+                          <div
+                              style={{
+                                  background: "#fff",
+                                  border: "1px solid #eee",
+                                  borderRadius: "12px",
+                                  padding: "20px",
+                              }}
+                          >
+                              <h2 style={{ marginTop: 0 }}>This job posting can't be automatically loaded.</h2>
+                              <p style={{ color: "#666", marginBottom: "14px" }}>
+                                  Some job sites block automated access.
+                                  <br />
+                                  You can still analyze the role by pasting the job description below.
+                              </p>
+                              <textarea
+                                  value={manualRawContent}
+                                  onChange={(e) => setManualRawContent(e.target.value)}
+                                  placeholder="Paste the full job description here. Include responsibilities, requirements, and any role details you want analyzed."
+                                  style={{
+                                      width: "100%",
+                                      minHeight: "220px",
+                                      padding: "12px",
+                                      border: "1px solid #ddd",
+                                      borderRadius: "8px",
+                                      resize: "vertical",
+                                      fontFamily: "inherit",
+                                      fontSize: "14px",
+                                      lineHeight: 1.4,
+                                      marginBottom: "12px",
+                                  }}
+                              />
+                              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                  <button
+                                      onClick={handleManualInterpretation}
+                                      disabled={!manualRawContent.trim() || isInterpreting}
+                                      style={{
+                                          padding: "10px 16px",
+                                          borderRadius: "8px",
+                                          border: "1px solid #ddd",
+                                          background: "#fff",
+                                          fontWeight: 600,
+                                          cursor: !manualRawContent.trim() || isInterpreting ? "not-allowed" : "pointer",
+                                          opacity: !manualRawContent.trim() || isInterpreting ? 0.6 : 1,
+                                      }}
+                                  >
+                                      Analyze Role
+                                  </button>
+                                  <a
+                                      href={selectedJob.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={{
+                                          padding: "10px 16px",
+                                          borderRadius: "8px",
+                                          border: "1px solid #ddd",
+                                          color: "#333",
+                                          textDecoration: "none",
+                                          fontWeight: 600,
+                                          background: "#fff",
+                                      }}
+                                  >
+                                      Open Job Page
+                                  </a>
+                              </div>
+                          </div>
+                      ) : !hydratedContent ? (
                           <div style={{textAlign: "center", padding: "60px"}}>
                               <h2>{selectedJob.title} at {selectedJob.company}</h2>
                               {isReading && (
@@ -781,8 +1098,10 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
 
                               </div>
                               {view === 'raw' ? (
-                                  <div style={contentBoxStyle}>
-                                      {hydratedContent ? renderJobContent(hydratedContent) : null}
+                                  <div>
+                                      <div style={contentBoxStyle}>
+                                          {hydratedContent ? renderJobContent(hydratedContent) : null}
+                                      </div>
                                   </div>
                               ) : (
                                   <div
@@ -914,6 +1233,11 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                       jobId={selectedJob.id}
                       jobTitle={selectedJob.title}
                       loadingArtifacts={loadingArtifacts}
+                      additionalContext={additionalContext}
+                      setAdditionalContext={setAdditionalContext}
+                      handleReinterpretWithContext={handleReinterpretWithContext}
+                      isInterpreting={isInterpreting}
+                      hydrationIncomplete={hydrationIncomplete}
                       onConsentGranted={handleConsentHandoff}
                       onConsentRevoked={handleConsentRevoked}
                   />

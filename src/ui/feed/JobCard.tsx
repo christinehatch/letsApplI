@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 
 type Job = {
   id: string;
@@ -16,6 +16,8 @@ type JobCardProps = {
   selected: boolean;
   onClick: () => void;
   onSave: () => void;
+  onStatusChange?: (newStatus: string) => void;
+  isDragging?: boolean;
 };
 
 function formatProvider(provider?: string): string {
@@ -107,29 +109,35 @@ function stateBadgeColor(state?: string | null): string {
   return "#666";
 }
 
-export function JobCard({ job, selected, onClick, onSave }: JobCardProps) {
+export const JobCard = memo(function JobCard({
+  job,
+  selected,
+  onClick,
+  onSave,
+  onStatusChange,
+  isDragging = false,
+}: JobCardProps) {
   const SAVED_STATES = ["saved", "applied", "interview", "offer"];
   const formattedPostedDate = formatPostedDate(job.posted_at);
   const formattedProvider = formatProvider(job.provider);
   const stateLabel = formatStateLabel(job.state);
   const isSaved = SAVED_STATES.includes(job.state ?? "");
-  const isAIRelevant =
-    typeof job.ai_relevance_score === "number" &&
-    job.ai_relevance_score >= 0.6;
+  const showAiBadge = isLikelyAiRole(job.title);
+  const cardStyle: React.CSSProperties = {
+    position: "relative",
+    padding: "16px",
+    borderRadius: "12px",
+    marginBottom: "12px",
+    border: selected ? "2px solid #4F7FFF" : "1px solid #eee",
+    background: selected ? "#F5F8FF" : "#fff",
+    cursor: "pointer",
+    opacity: isDragging ? 0.9 : 1,
+    transform: isDragging ? "scale(1.02)" : "none",
+    boxShadow: isDragging ? "0 10px 25px rgba(0,0,0,0.2)" : "none",
+  };
 
   return (
-    <div
-      onClick={onClick}
-      style={{
-        position: "relative",
-        padding: "16px",
-        border: selected ? "2px solid #0070f3" : "1px solid #eee",
-        borderRadius: "12px",
-        marginBottom: "12px",
-        cursor: "pointer",
-        backgroundColor: selected ? "#f0f7ff" : "#fff",
-      }}
-    >
+    <div onClick={onClick} style={cardStyle}>
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -164,7 +172,7 @@ export function JobCard({ job, selected, onClick, onSave }: JobCardProps) {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         <div style={{ fontWeight: 600, fontSize: "14px" }}>{job.title}</div>
-        {isAIRelevant && (
+        {showAiBadge && (
           <span
             style={{
               fontSize: "11px",
@@ -197,6 +205,48 @@ export function JobCard({ job, selected, onClick, onSave }: JobCardProps) {
           {stateLabel}
         </div>
       )}
+      {onStatusChange && (
+        <div style={{ marginTop: "8px" }}>
+          <select
+            value={job.state ?? "saved"}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              e.stopPropagation();
+              onStatusChange(e.target.value);
+            }}
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              border: "1px solid #ddd",
+              borderRadius: "6px",
+              fontSize: "12px",
+              background: "#fff",
+            }}
+          >
+            <option value="saved">Saved</option>
+            <option value="applied">Applied</option>
+            <option value="interview">Interview</option>
+            <option value="offer">Offer</option>
+            <option value="rejected">Rejected</option>
+            <option value="ignored">Ignored</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+      )}
     </div>
   );
+});
+
+export function isLikelyAiRole(title: string): boolean {
+  const terms = [
+    "ai",
+    "machine learning",
+    "ml",
+    "genai",
+    "llm",
+    "artificial intelligence",
+  ];
+
+  const lower = title.toLowerCase();
+  return terms.some((term) => lower.includes(term));
 }

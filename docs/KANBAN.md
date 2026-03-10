@@ -19,18 +19,22 @@ Major capabilities already shipped and stable.
 - Phase 5.1 Hydration
 - Phase 6 Exploration UI (partial)
 - AI relevance signal extractor
+- Signal-based discovery filtering
 
 ---
-
-## Current Work
-
-Tasks actively being developed. Limit to 3–5 items.
 
 - Add description to AI relevance scoring
 - AI badge in job cards
 - AI feed filter
-
 - Add role_summary to interpretation
+- Save job button
+- Saved jobs page
+- Job status transitions
+## Current Work
+
+Tasks actively being developed. Limit to 3–5 items.
+
+
 
 ---
 
@@ -39,19 +43,30 @@ Tasks actively being developed. Limit to 3–5 items.
 Features planned soon but not currently active.
 
 - Feed usability
-- Save job button
-- Saved jobs page
-- Job status transitions
 
 - Daily workflow
 - New jobs since last visit
 - Review mode
 - Skip / Save / Open loop
 
+- Saved Jobs Review Mode
+- Flow: discover job -> save job ⭐ -> review saved jobs -> mark as applied / ignored / archived
+- Purpose: turn saved jobs into an actionable pipeline instead of a passive bookmark list
+- Acceptance criteria:
+- A Saved Jobs view exists
+- Jobs show saved date
+- User can mark a job as applied, ignored, or archived
+- Status updates persist in job_user_state
+
 - Signal-driven discovery
 - Job understanding
 - capability_domains
 - project_signals
+
+- Signal exploration UX
+- Filter panels
+- Domain exploration cards
+- Active filter chips
 
 - Discovery expansion
 - Ashby adapter

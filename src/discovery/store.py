@@ -8,6 +8,7 @@ from persistence.db import get_connection, transactional
 from persistence.repos.jobs_repo import JobsRepo
 from discovery.models import DiscoveredJob
 from discovery.signals.ai_relevance import compute_ai_relevance
+from discovery.title_signal_extractor import extract_title_signals
 import time
 from datetime import datetime, timezone
 
@@ -61,6 +62,7 @@ class DiscoveryStore:
                         tags=tags if isinstance(tags, list) else None,
                     )
                     enriched_meta.update(ai_relevance)
+                    enriched_meta["signals"] = extract_title_signals(job.title)
 
                     repo.upsert_discovered_job(
                         provider=provider,

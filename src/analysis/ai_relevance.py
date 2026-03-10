@@ -19,6 +19,7 @@ def score_ai_relevance(interpretation: dict) -> dict:
 
     score = 0.0
     signals: list[str] = []
+    description_parts: list[str] = []
 
     capabilities = interpretation.get("CapabilityEmphasisSignals", [])
     capability_blob = " ".join(
@@ -29,6 +30,9 @@ def score_ai_relevance(interpretation: dict) -> dict:
     if _contains_any(capability_blob, capability_terms):
         score += 0.4
         signals.append("Capability signals indicate AI/ML emphasis")
+        description_parts.append(
+            "the role emphasizes AI/ML platform or product capabilities"
+        )
 
     requirements = (
         interpretation.get("RequirementsAnalysis", {}).get("explicit_requirements", [])
@@ -41,6 +45,9 @@ def score_ai_relevance(interpretation: dict) -> dict:
     if _contains_any(requirements_blob, requirement_terms):
         score += 0.3
         signals.append("Requirements reference LLM/RAG/embeddings tooling")
+        description_parts.append(
+            "the job requires experience with modern AI or LLM tooling"
+        )
 
     role_summary_text = (
         interpretation.get("RoleSummary", {}).get("summary_text", "")
@@ -50,6 +57,9 @@ def score_ai_relevance(interpretation: dict) -> dict:
     if _contains_any(role_summary_text, role_summary_terms):
         score += 0.2
         signals.append("Role summary references AI-powered or intelligent systems")
+        description_parts.append(
+            "the role description references AI-powered systems or intelligent products"
+        )
 
     score = min(score, 1.0)
 
@@ -60,8 +70,14 @@ def score_ai_relevance(interpretation: dict) -> dict:
     else:
         level = "LOW"
 
+    if not description_parts:
+        description = "No clear AI-related signals were detected in the role interpretation."
+    else:
+        description = "This role shows AI relevance because " + ", ".join(description_parts) + "."
+
     return {
         "ai_relevance_score": round(score, 4),
         "ai_relevance_level": level,
+        "description": description,
         "signals": signals,
     }

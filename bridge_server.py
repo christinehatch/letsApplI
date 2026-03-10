@@ -29,7 +29,7 @@ from phase5.phase5_1.types import ConsentPayload
 
 import time
 from playwright.async_api import async_playwright, Browser, Playwright
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, Any
 import asyncio
 _preview_inflight: dict[str, asyncio.Task] = {}
 _preview_lock = asyncio.Lock()
@@ -116,6 +116,10 @@ class JobStatePayload(BaseModel):
 class ReadJobPayload(BaseModel):
     job_id: str
 
+
+class ManualInterpretPayload(BaseModel):
+    raw_content: str
+
 VALID_STATES = {
     "saved",
     "applied",
@@ -171,6 +175,93 @@ def _normalize_filter(value: Optional[str]) -> Optional[str]:
     return normalized
 
 
+def _normalize_signal_filters(value: Optional[str]) -> list[str]:
+    if value is None:
+        return []
+    normalized = [part.strip().lower() for part in value.split(",")]
+    out: list[str] = []
+    for signal in normalized:
+        if not signal or signal == "all":
+            continue
+        if signal not in out:
+            out.append(signal)
+    return out
+
+
+def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        # Support common UTC "Z" suffix.
+        normalized = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+        return dt
+    except ValueError:
+        return None
+
+
+def classify_discovery_jobs(jobs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """
+    Deterministically group discovery jobs for future UI consumption.
+
+    Rules:
+    - new_today_high:
+      within last 24h and has >=1 strong signal.
+    - new_today_low:
+      within last 24h and has no strong signal.
+    - skipped:
+      older than 48h OR user state is ignored/archived.
+    """
+    now = datetime.now().astimezone()
+    strong_signals = {
+        "ai",
+        "machine_learning",
+        "product",
+        "backend",
+        "frontend",
+        "platform",
+    }
+
+    grouped: dict[str, list[dict[str, Any]]] = {
+        "new_today_high": [],
+        "new_today_low": [],
+        "skipped": [],
+    }
+
+    for job in jobs:
+        first_seen_raw = job.get("first_seen_at")
+        first_seen = _parse_iso_datetime(first_seen_raw)
+        state = str(job.get("state") or "").strip().lower()
+        job_signals = {
+            str(signal).strip().lower()
+            for signal in (job.get("signals") or [])
+            if str(signal).strip()
+        }
+
+        has_strong_signal = len(job_signals.intersection(strong_signals)) > 0
+        age_hours: Optional[float] = None
+        if first_seen:
+            age_hours = (now - first_seen).total_seconds() / 3600.0
+
+        is_skipped = state in {"ignored", "archived"} or (
+            age_hours is not None and age_hours > 48.0
+        )
+        if is_skipped:
+            grouped["skipped"].append(job)
+            continue
+
+        is_new_today = age_hours is not None and age_hours <= 24.0
+        if is_new_today and has_strong_signal:
+            grouped["new_today_high"].append(job)
+            continue
+        if is_new_today:
+            grouped["new_today_low"].append(job)
+
+    return grouped
+
+
 @app.get("/api/discovery-feed")
 async def discovery_feed(
     page: int = Query(1, ge=1, description="1-based page number"),
@@ -182,6 +273,8 @@ async def discovery_feed(
     ),
     company: Optional[str] = Query(None, description="Optional company substring"),
     ai_filter: Optional[str] = Query(None, description="Optional AI filter: ai_only"),
+    signal: Optional[str] = Query(None, description="Optional title-signal bucket"),
+    signals: Optional[str] = Query(None, description="Optional comma-separated title-signal buckets"),
 ):
     from analysis.ai_relevance import score_ai_relevance
     from persistence.db import get_connection
@@ -191,6 +284,11 @@ async def discovery_feed(
     conn = get_connection(DB_PATH)
     try:
         repo = JobsRepo(conn)
+        selected_signals = _normalize_signal_filters(signals)
+        normalized_signal = _normalize_filter(signal)
+        if normalized_signal and normalized_signal not in selected_signals:
+            selected_signals.append(normalized_signal)
+
         jobs, total_jobs = repo.list_discovery_feed_jobs(
             page=page,
             page_size=page_size,
@@ -199,6 +297,7 @@ async def discovery_feed(
             experience=_normalize_filter(experience),
             company=_normalize_filter(company),
             ai_filter=_normalize_filter(ai_filter),
+            signals=selected_signals or None,
         )
 
         job_ids = [job.get("job_id") for job in jobs if job.get("job_id")]
@@ -768,6 +867,41 @@ async def handle_interpret_job(payload: HandoffPayload):
     except HTTPException:
         raise
 
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/interpret-manual")
+async def handle_interpret_manual(payload: ManualInterpretPayload):
+    try:
+        raw_content = (payload.raw_content or "").strip()
+        if not raw_content:
+            raise HTTPException(status_code=400, detail="raw_content is required")
+
+        interpretation_input = InterpretationInput(
+            job_id="manual:input:adhoc",
+            raw_content=raw_content,
+            read_at=datetime.utcnow(),
+        )
+
+        interpreter = Phase52Interpreter()
+        interpreter.set_input(interpretation_input)
+        result = interpreter.interpret()
+        span_map = interpreter.get_last_span_map()
+
+        return {
+            "interpretation": result,
+            "span_map": span_map,
+        }
+
+    except InterpretationNotAuthorizedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except InvalidInputSourceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Phase52ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
