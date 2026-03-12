@@ -34,6 +34,17 @@ Major capabilities already shipped and stable.
 
 Tasks actively being developed. Limit to 3–5 items.
 
+- Feed usability
+- Search Quality
+- Done: tokenized search
+- Done: seniority filtering
+- Done: synonym mapping
+- Done: fallback search
+- Daily workflow
+- New jobs since last visit
+- Skip / Save / Open loop
+- Session Start summary
+- Keyboard triage (S / K / O)
 
 
 ---
@@ -42,12 +53,9 @@ Tasks actively being developed. Limit to 3–5 items.
 
 Features planned soon but not currently active.
 
-- Feed usability
+- Profile page
 
-- Daily workflow
-- New jobs since last visit
 - Review mode
-- Skip / Save / Open loop
 
 - Saved Jobs Review Mode
 - Flow: discover job -> save job ⭐ -> review saved jobs -> mark as applied / ignored / archived
@@ -89,6 +97,17 @@ Long-term capabilities.
 
 ---
 
+- Bridge server service-layer refactor trigger
+- Architecture guardrail.
+- If bridge_server.py exceeds ~700 lines OR orchestration logic appears in more than three endpoints, introduce a service layer.
+- Target structure:
+- services/ job_view_service.py interpretation_service.py discovery_service.py profile_service.py
+- bridge_server.py should only contain API routing and request validation. All orchestration logic should move to service modules.
+- Acceptance criteria:
+- bridge_server only handles HTTP routing
+- interpretation logic lives in interpretation_service
+- job content resolution lives in job_view_service
+- discovery logic lives in discovery_service
 ## Parking Lot
 
 Ideas not scheduled.

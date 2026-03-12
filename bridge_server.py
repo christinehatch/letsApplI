@@ -2,12 +2,15 @@ import sys
 import os
 import hashlib
 import json
+import re
+import importlib.util
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from urllib.parse import urlparse
+from pathlib import Path
 from src.phase5.phase5_2.validator_schema import validate_schema
 
 from src.phase5.phase5_2.determinism import compute_structural_hash
@@ -188,6 +191,65 @@ def _normalize_signal_filters(value: Optional[str]) -> list[str]:
     return out
 
 
+def _normalize_role_and_experience(
+    role: Optional[str], experience: Optional[str]
+) -> tuple[Optional[str], Optional[str]]:
+    normalized_role = _normalize_filter(role)
+    normalized_experience = _normalize_filter(experience)
+    if not normalized_role:
+        return normalized_role, normalized_experience
+
+    working_role = normalized_role
+    junior_patterns = [
+        r"\bnew\s+grad\b",
+        r"\bentry\s+level\b",
+        r"\bearly\s+career\b",
+        r"\bjunior\b",
+        r"\bentry\b",
+        r"\bassociate\b",
+    ]
+
+    has_junior_intent = False
+    for pattern in junior_patterns:
+        if re.search(pattern, working_role, flags=re.IGNORECASE):
+            has_junior_intent = True
+            working_role = re.sub(pattern, " ", working_role, flags=re.IGNORECASE)
+
+    normalized_role = _normalize_filter(" ".join(working_role.split()))
+    if has_junior_intent and not normalized_experience:
+        normalized_experience = "junior"
+
+    return normalized_role, normalized_experience
+
+
+def _expand_role_synonyms(role: Optional[str]) -> Optional[str]:
+    normalized_role = _normalize_filter(role)
+    if not normalized_role:
+        return normalized_role
+
+    expanded_tokens = normalized_role.split()
+    token_set = set(expanded_tokens)
+
+    phrase_synonyms = [
+        (["ml"], ["machine", "learning"]),
+        (["machine", "learning"], ["ml"]),
+        (["ai"], ["artificial", "intelligence"]),
+        (["artificial", "intelligence"], ["ai"]),
+    ]
+
+    for source_phrase, target_phrase in phrase_synonyms:
+        source_found = all(token in token_set for token in source_phrase)
+        if not source_found:
+            continue
+        for token in target_phrase:
+            if token in token_set:
+                continue
+            expanded_tokens.append(token)
+            token_set.add(token)
+
+    return " ".join(expanded_tokens)
+
+
 def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
     if not value or not isinstance(value, str):
         return None
@@ -286,17 +348,20 @@ async def discovery_feed(
         repo = JobsRepo(conn)
         selected_signals = _normalize_signal_filters(signals)
         normalized_signal = _normalize_filter(signal)
-        if normalized_signal and normalized_signal not in selected_signals:
-            selected_signals.append(normalized_signal)
+        normalized_role, normalized_experience = _normalize_role_and_experience(
+            role, experience
+        )
+        expanded_role = _expand_role_synonyms(normalized_role)
 
         jobs, total_jobs = repo.list_discovery_feed_jobs(
             page=page,
             page_size=page_size,
             location=_normalize_filter(location),
-            role=_normalize_filter(role),
-            experience=_normalize_filter(experience),
+            role=expanded_role,
+            experience=normalized_experience,
             company=_normalize_filter(company),
             ai_filter=_normalize_filter(ai_filter),
+            signal=normalized_signal,
             signals=selected_signals or None,
         )
 
@@ -340,6 +405,75 @@ async def discovery_feed(
         "total_jobs": total_jobs,
         "jobs": jobs,
     }
+
+
+@app.get("/api/resume-signals")
+async def get_resume_signals():
+    module_path = Path(__file__).resolve().parent / "src" / "state" / "resume_signals.py"
+    if not module_path.exists():
+        return {"signals": []}
+
+    try:
+        spec = importlib.util.spec_from_file_location("resume_signals_module", module_path)
+        if spec is None or spec.loader is None:
+            return {"signals": []}
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        load_fn = getattr(module, "load_resume_signals", None)
+        if not callable(load_fn):
+            return {"signals": []}
+        return {"signals": load_fn()}
+    except Exception:
+        return {"signals": []}
+
+
+@app.get("/api/market-alignment")
+async def get_market_alignment():
+    from analysis.market_alignment import compute_market_alignment
+    from persistence.db import get_connection
+    from persistence.repos.jobs_repo import JobsRepo
+    from state import DB_PATH
+
+    # Load resume signals safely (same fallback semantics as /api/resume-signals).
+    module_path = Path(__file__).resolve().parent / "src" / "state" / "resume_signals.py"
+    resume_signals: list[str] = []
+    if module_path.exists():
+        try:
+            spec = importlib.util.spec_from_file_location("resume_signals_module", module_path)
+            if spec is not None and spec.loader is not None:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                load_fn = getattr(module, "load_resume_signals", None)
+                if callable(load_fn):
+                    resume_signals = load_fn()
+        except Exception:
+            resume_signals = []
+
+    if not resume_signals:
+        return {"alignment": {}}
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobsRepo(conn)
+        page = 1
+        page_size = 500
+        all_jobs: list[dict[str, Any]] = []
+
+        while True:
+            jobs, total_jobs = repo.list_discovery_feed_jobs(
+                page=page,
+                page_size=page_size,
+            )
+            all_jobs.extend(jobs)
+            if len(all_jobs) >= total_jobs or not jobs:
+                break
+            page += 1
+    finally:
+        conn.close()
+
+    alignment = compute_market_alignment(all_jobs, resume_signals)
+    return {"alignment": alignment}
+
 
 @app.get("/api/discovery-summary")
 async def discovery_summary(
@@ -387,6 +521,39 @@ async def get_hydrated_job(
     conn = get_connection(DB_PATH)
 
     try:
+        job_row = conn.execute(
+            """
+            SELECT raw_provider_payload_json
+            FROM jobs
+            WHERE provider_job_key = ?
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+
+        if job_row and job_row["raw_provider_payload_json"]:
+            try:
+                payload = json.loads(job_row["raw_provider_payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                payload = None
+
+            if isinstance(payload, dict):
+                description_text = payload.get("description_text")
+                if isinstance(description_text, str) and description_text.strip():
+                    return {
+                        "job_id": job_id,
+                        "content": description_text,
+                        "content_source": "discovery",
+                    }
+
+                description_html = payload.get("description_html")
+                if isinstance(description_html, str) and description_html.strip():
+                    return {
+                        "job_id": job_id,
+                        "content": description_html,
+                        "content_source": "discovery",
+                    }
+
         row = conn.execute(
             """
             SELECT h.raw_content
@@ -403,12 +570,14 @@ async def get_hydrated_job(
         if not row:
             return {
                 "job_id": job_id,
-                "content": None
+                "content": None,
+                "content_source": None,
             }
 
         return {
             "job_id": job_id,
-            "content": row["raw_content"]
+            "content": row["raw_content"],
+            "content_source": "hydration",
         }
 
     finally:
@@ -432,7 +601,17 @@ async def job_interpretation(
         interpretation = record["interpretation"] if record else None
         span_map = record["span_map"] if record else {}
 
-        row = conn.execute(
+        job_row = conn.execute(
+            """
+            SELECT raw_provider_payload_json
+            FROM jobs
+            WHERE provider_job_key = ?
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+
+        hydration_row = conn.execute(
             """
             SELECT h.raw_content
             FROM hydrations h
@@ -445,11 +624,30 @@ async def job_interpretation(
             (job_id,),
         ).fetchone()
 
+        resolved_content: str | None = None
+        if job_row and job_row["raw_provider_payload_json"]:
+            try:
+                provider_payload = json.loads(job_row["raw_provider_payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                provider_payload = None
+
+            if isinstance(provider_payload, dict):
+                description_html = provider_payload.get("description_html")
+                description_text = provider_payload.get("description_text")
+
+                if isinstance(description_html, str) and description_html.strip():
+                    resolved_content = description_html
+                elif isinstance(description_text, str) and description_text.strip():
+                    resolved_content = description_text
+
+        if resolved_content is None and hydration_row and hydration_row["raw_content"]:
+            resolved_content = hydration_row["raw_content"]
+
         if interpretation is not None:
-            if not span_map and row and row["raw_content"]:
+            if not span_map and resolved_content:
                 span_map = {
                     span["span_id"]: span["text"]
-                    for span in build_spans(row["raw_content"])
+                    for span in build_spans(resolved_content)
                 }
             ai_score = score_ai_relevance(interpretation)
             result = {
@@ -462,7 +660,7 @@ async def job_interpretation(
             print(json.dumps(result, indent=2, ensure_ascii=False))
             return result
 
-        if not row:
+        if not resolved_content:
             result = {
                 "job_id": job_id,
                 "interpretation": None,
@@ -473,7 +671,7 @@ async def job_interpretation(
             print(json.dumps(result, indent=2, ensure_ascii=False))
             return result
 
-        job_text = row["raw_content"]
+        job_text = resolved_content
 
         interpreter = Phase52Interpreter()
         interpretation_input = InterpretationInput(
@@ -482,7 +680,16 @@ async def job_interpretation(
             read_at=datetime.utcnow(),
         )
         interpreter.set_input(interpretation_input)
-        interpretation = interpreter.interpret()
+        try:
+            interpretation = interpreter.interpret()
+        except Phase52ValidationError as e:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "validation_failed",
+                    "reason": str(e),
+                },
+            )
         span_map = interpreter.get_last_span_map()
 
         repo.save_interpretation(
@@ -503,6 +710,23 @@ async def job_interpretation(
     print("===== INTERPRETATION SENT TO UI =====")
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return result
+
+@app.delete("/api/job-interpretation")
+async def clear_job_interpretation(
+    job_id: str = Query(..., description="Canonical job id"),
+):
+    from persistence.db import get_connection
+    from persistence.repos.job_interpretation_repo import JobInterpretationRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobInterpretationRepo(conn)
+        repo.delete_interpretation(job_id)
+    finally:
+        conn.close()
+
+    return {"success": True, "job_id": job_id}
 
 
 @app.post("/api/job-state")

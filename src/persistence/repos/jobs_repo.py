@@ -126,6 +126,7 @@ class JobsRepo:
             signal=signal,
             signals=signals,
         )
+        ranking_expr, ranking_params = self._build_role_ranking_expression(role)
 
         page = max(1, page)
         page_size = max(1, page_size)
@@ -142,7 +143,13 @@ class JobsRepo:
         total_jobs = int(count_row[0]) if count_row else 0
 
         paged_params = list(params)
+        paged_params.extend(ranking_params)
         paged_params.extend([page_size, offset])
+        order_by = (
+            f"({ranking_expr}) DESC, jobs.discovered_at DESC"
+            if ranking_expr
+            else "jobs.discovered_at DESC"
+        )
 
         rows = self.conn.execute(
             f"""
@@ -163,7 +170,7 @@ class JobsRepo:
             LEFT JOIN job_interpretations ji
               ON jobs.provider_job_key = ji.job_id
             WHERE {' AND '.join(where)}
-            ORDER BY jobs.discovered_at DESC
+            ORDER BY {order_by}
             LIMIT ?
             OFFSET ?
             """,
@@ -240,6 +247,27 @@ class JobsRepo:
         return jobs
 
     @staticmethod
+    def _build_role_ranking_expression(role: Optional[str]) -> tuple[str, list[str]]:
+        if not role or not role.strip():
+            return "", []
+
+        normalized_role = role.strip().lower()
+        tokens = [token for token in normalized_role.split() if token]
+        unique_tokens: list[str] = []
+        for token in tokens:
+            if token not in unique_tokens:
+                unique_tokens.append(token)
+
+        parts = ["CASE WHEN LOWER(jobs.title) LIKE ? THEN 10 ELSE 0 END"]
+        params: list[str] = [f"%{normalized_role}%"]
+
+        for token in unique_tokens:
+            parts.append("CASE WHEN LOWER(jobs.title) LIKE ? THEN 3 ELSE 0 END")
+            params.append(f"%{token}%")
+
+        return " + ".join(parts), params
+
+    @staticmethod
     def _experience_tokens(experience: str) -> list[str]:
         mapping = {
             "junior": ["junior", "new grad", "entry"],
@@ -294,8 +322,10 @@ class JobsRepo:
             params.extend([pattern, pattern, pattern])
 
         if role:
-            params.append(f"%{role.strip().lower()}%")
-            where.append("LOWER(title) LIKE ?")
+            tokens = [t for t in role.strip().lower().split() if t]
+            for token in tokens:
+                where.append("LOWER(title) LIKE ?")
+                params.append(f"%{token}%")
 
         if company:
             params.append(f"%{company.strip().lower()}%")

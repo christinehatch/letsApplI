@@ -10,7 +10,7 @@ It is responsible for:
 """
 
 import json
-from typing import Optional
+from typing import Optional, Callable
 
 from src.llm.adapter import LLMAdapter, LLMAdapterError
 from .span_indexer import build_spans, format_span_prompt
@@ -33,7 +33,12 @@ class Phase52LLMAdapter:
     def __init__(self):
         self._llm = LLMAdapter()
 
-    def run(self, raw_content: str, spans: Optional[list[dict]] = None) -> dict:
+    def run(
+        self,
+        raw_content: str,
+        spans: Optional[list[dict]] = None,
+        pre_validate_sanitizer: Optional[Callable[[dict], dict]] = None,
+    ) -> dict:
         """
         Generate and validate Phase 5.2 output.
 
@@ -44,8 +49,10 @@ class Phase52LLMAdapter:
         - Attempt 2: generate + validate.
         - If still invalid, raise Phase52ValidationError with raw_excerpt.
         """
+        analysis_spans = spans if spans is not None else build_spans(raw_content)
+
         system_prompt = self._build_system_prompt()
-        base_prompt = self._build_user_prompt(raw_content, spans=spans)
+        base_prompt = self._build_user_prompt(raw_content, spans=analysis_spans)
         user_prompt = base_prompt
 
         for attempt in (1, 2):
@@ -67,6 +74,8 @@ class Phase52LLMAdapter:
             print("==========================\n\n")
 
             self._drop_empty_capability_signal_evidence(parsed)
+            if pre_validate_sanitizer is not None:
+                parsed = pre_validate_sanitizer(parsed)
             print("\n\n===== POST CLEANUP OUTPUT =====")
             print(json.dumps(parsed, indent=2, ensure_ascii=False))
             print("===============================\n\n")
@@ -287,6 +296,58 @@ class Phase52LLMAdapter:
 
     "evidence_span_ids": ["span_3","span_8"]
 
+    GROUNDING PROCEDURE
+
+    Before writing any interpretation:
+
+    Step 1 - Identify Evidence
+
+    Read the hydrated job content and identify spans that describe:
+
+    - responsibilities
+    - collaboration patterns
+    - technical domains
+    - operational context
+    - role objectives
+    - requirements
+
+    Select the span_ids that contain these signals.
+
+    Step 2 - Cluster Evidence
+
+    Group related spans into themes.
+
+    Examples:
+
+    - collaboration spans
+    - compliance spans
+    - AI / ML spans
+    - product leadership spans
+    - operations / metrics spans
+
+    Step 3 - Generate Interpretation
+
+    Generate the structured interpretation using ONLY the information
+    present in the selected evidence spans.
+
+    Interpretations must be derived from the spans.
+
+    Do not introduce concepts that cannot be reasonably inferred
+    from at least one evidence span.
+
+    ADDITIONAL GROUNDING RULES
+
+    - Every interpretation section must reference evidence_span_ids.
+    - Evidence spans must come from span_map.
+    - Interpretations may summarize or classify ideas (for example
+      "Cross-Functional Collaboration"), even if the exact wording
+      does not appear in the job text.
+    - Do NOT introduce candidate evaluation, coaching advice,
+      personalization, or predictions about the applicant.
+
+    The evidence identification and clustering steps are internal reasoning only.
+    Do NOT return these intermediate steps in output.
+
     STRICT LIMITS
 
     Do NOT:
@@ -296,6 +357,35 @@ class Phase52LLMAdapter:
     - speculate beyond the job text
 
     Interpret the role, not the candidate.
+
+    ANALYSIS STYLE REQUIREMENTS
+
+    The output must be written in neutral analytical language.
+
+    Do NOT address the reader or candidate directly.
+
+    Avoid second-person language such as:
+    "you", "your", "you should", "you will benefit".
+
+    Do NOT provide:
+    - advice
+    - recommendations
+    - career guidance
+    - evaluation of candidate fit
+    - strategies for succeeding in the role
+
+    Describe the role itself, not what a candidate should do.
+
+    Use neutral third-person phrasing such as:
+
+    "The role involves..."
+    "The position requires..."
+    "The responsibilities include..."
+    "The role emphasizes..."
+    "The position focuses on..."
+
+    The analysis should describe the structure, responsibilities, and signals
+    within the role, not evaluate or advise a candidate.
 
     You must produce structured JSON that EXACTLY matches the following schema.
 

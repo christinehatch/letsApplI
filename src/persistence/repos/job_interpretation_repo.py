@@ -65,3 +65,13 @@ class JobInterpretationRepo:
             "interpretation": interpretation,
             "span_map": span_map,
         }
+
+    def delete_interpretation(self, job_id: str) -> None:
+        self.conn.execute(
+            """
+            DELETE FROM job_interpretations
+            WHERE job_id = ?
+            """,
+            (job_id,),
+        )
+        self.conn.commit()
