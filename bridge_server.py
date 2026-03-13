@@ -11,24 +11,25 @@ from datetime import datetime
 from fastapi.responses import Response, JSONResponse
 from urllib.parse import urlparse
 from pathlib import Path
+
+# Ensure local project packages under ./src are importable in all environments.
+sys.path.append(os.path.join(os.getcwd(), "src"))
+
 from src.phase5.phase5_2.validator_schema import validate_schema
 
 from src.phase5.phase5_2.determinism import compute_structural_hash
-from phase5.phase5_2.interpreter import Phase52Interpreter
-from phase5.phase5_2.types import InterpretationInput
-from phase5.phase5_2.errors import (
+from src.phase5.phase5_2.interpreter import Phase52Interpreter
+from src.phase5.phase5_2.types import InterpretationInput
+from src.phase5.phase5_2.errors import (
     InterpretationNotAuthorizedError,
     InvalidInputSourceError,
     Phase52ValidationError,
 )
-from discovery.summary import summarize_since
-from discovery.run_state import load_last_run
-
-# Adds the project root to the Python path so 'src' is discoverable
-sys.path.append(os.path.join(os.getcwd(), "src"))
+from src.discovery.summary import summarize_since
+from src.discovery.run_state import load_last_run
 
 from ui.read_job import read_job_for_ui, get_fetcher
-from phase5.phase5_1.types import ConsentPayload
+from src.phase5.phase5_1.types import ConsentPayload
 
 import time
 from playwright.async_api import async_playwright, Browser, Playwright
