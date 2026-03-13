@@ -41,6 +41,7 @@ _context = None
 # Playwright singletons
 _playwright: Optional[Playwright] = None
 _browser: Optional[Browser] = None
+_browser_init_error: Optional[str] = None
 
 # Preview cache: url -> (timestamp, pdf_bytes)
 _preview_cache: Dict[str, Tuple[float, bytes]] = {}
@@ -52,6 +53,22 @@ app = FastAPI()
 def _load_allowed_origins() -> list[str]:
     raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+async def _ensure_browser_context() -> None:
+    global _playwright, _browser, _context, _browser_init_error
+    if _context is not None:
+        return
+    try:
+        if _playwright is None:
+            _playwright = await async_playwright().start()
+        if _browser is None:
+            _browser = await _playwright.chromium.launch()
+        _context = await _browser.new_context()
+        _browser_init_error = None
+    except Exception as exc:
+        _browser_init_error = str(exc)
+        raise
 
 @app.on_event("startup")
 async def startup_event():
@@ -71,9 +88,11 @@ async def startup_event():
     finally:
         conn.close()
 
-    _playwright = await async_playwright().start()
-    _browser = await _playwright.chromium.launch()
-    _context = await _browser.new_context()
+    try:
+        await _ensure_browser_context()
+    except Exception as exc:
+        # Preview browser is optional for core API availability.
+        print(f"Preview browser init skipped at startup: {exc}")
 
 
 @app.on_event("shutdown")
@@ -155,6 +174,8 @@ ALLOWED_PREVIEW_HOSTS = {
 }
 
 async def _render_pdf(url: str) -> bytes:
+    if _context is None:
+        await _ensure_browser_context()
     if _context is None:
         raise RuntimeError("Browser context not initialized")
 
@@ -865,6 +886,18 @@ async def user_preview(url: str = Query(..., description="Job listing URL")):
         raise HTTPException(status_code=400, detail="Invalid URL scheme.")
     if parsed.netloc not in ALLOWED_PREVIEW_HOSTS:
         raise HTTPException(status_code=400, detail=f"Host not allowed: {parsed.netloc}")
+
+    if _context is None:
+        try:
+            await _ensure_browser_context()
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Preview browser is unavailable on this instance."
+                    + (f" Last error: {_browser_init_error}" if _browser_init_error else "")
+                ),
+            )
 
     # --- Server-side cache (fast path) ---
     now = time.time()
