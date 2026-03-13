@@ -47,6 +47,11 @@ PREVIEW_TTL_SECONDS = 300  # 5 minutes
 
 app = FastAPI()
 
+
+def _load_allowed_origins() -> list[str]:
+    raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
 @app.on_event("startup")
 async def startup_event():
     global _playwright, _browser, _context
@@ -99,7 +104,8 @@ async def shutdown_event():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_load_allowed_origins(),
+    allow_origin_regex=os.getenv("ALLOW_ORIGIN_REGEX"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -122,6 +128,10 @@ class ReadJobPayload(BaseModel):
 
 class ManualInterpretPayload(BaseModel):
     raw_content: str
+
+
+class JobIgnorePayload(BaseModel):
+    job_id: str
 
 VALID_STATES = {
     "saved",
@@ -264,6 +274,38 @@ def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
+def _normalize_whitespace(text: str) -> str:
+    return " ".join((text or "").split()).strip().lower()
+
+
+def _is_cached_interpretation_stale(
+    span_map: Optional[dict[str, str]],
+    resolved_content: Optional[str],
+) -> bool:
+    if not span_map or not resolved_content:
+        return False
+
+    normalized_content = _normalize_whitespace(resolved_content)
+    if not normalized_content:
+        return False
+
+    checked = 0
+    matched = 0
+    for value in span_map.values():
+        if not isinstance(value, str):
+            continue
+        candidate = _normalize_whitespace(value)
+        if len(candidate) < 24:
+            continue
+        checked += 1
+        if candidate in normalized_content:
+            matched += 1
+
+    if checked == 0:
+        return False
+    return matched == 0
+
+
 def classify_discovery_jobs(jobs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     """
     Deterministically group discovery jobs for future UI consumption.
@@ -396,15 +438,37 @@ async def discovery_feed(
             else:
                 job["ai_relevance_score"] = None
                 job["ai_relevance_level"] = None
+
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total_jobs": total_jobs,
+            "jobs": jobs,
+        }
     finally:
         conn.close()
 
-    return {
-        "page": page,
-        "page_size": page_size,
-        "total_jobs": total_jobs,
-        "jobs": jobs,
-    }
+
+@app.get("/api/new-jobs-count")
+async def new_jobs_count():
+    from persistence.db import get_connection
+    from persistence.repos.jobs_repo import JobsRepo
+    from state import DB_PATH
+    from user_session import get_last_seen, update_last_seen
+
+    last_seen_at = get_last_seen()
+    new_jobs = 0
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobsRepo(conn)
+        if last_seen_at:
+            new_jobs = repo.count_jobs_since(last_seen_at)
+    finally:
+        conn.close()
+
+    update_last_seen()
+    return {"new_jobs": new_jobs}
 
 
 @app.get("/api/resume-signals")
@@ -643,6 +707,13 @@ async def job_interpretation(
         if resolved_content is None and hydration_row and hydration_row["raw_content"]:
             resolved_content = hydration_row["raw_content"]
 
+        if interpretation is not None and _is_cached_interpretation_stale(
+            span_map, resolved_content
+        ):
+            repo.delete_interpretation(job_id)
+            interpretation = None
+            span_map = {}
+
         if interpretation is not None:
             if not span_map and resolved_content:
                 span_map = {
@@ -765,6 +836,23 @@ async def clear_job_state(job_id: str = Query(..., description="Job id to clear 
         conn.close()
 
     return {"success": True}
+
+
+@app.post("/api/job-ignore")
+async def ignore_job(payload: JobIgnorePayload):
+    from persistence.db import get_connection
+    from persistence.repos.job_user_state_repo import JobUserStateRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobUserStateRepo(conn)
+        repo.set_state(payload.job_id, "ignored")
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"status": "ignored"}
 
 @app.get("/api/user-preview")
 async def user_preview(url: str = Query(..., description="Job listing URL")):

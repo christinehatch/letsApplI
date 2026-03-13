@@ -1,16 +1,19 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { type Phase6SidePanelHandle } from "../phase6/Phase6SidePanel";
 import { FeedSidebar } from "../feed/FeedSidebar";
-import { isLikelyAiRole, JobCard } from "../feed/JobCard";
+import { isLikelyAiRole } from "../feed/JobCard";
 import { SavedJobsBoard } from "../feed/SavedJobsBoard";
 import { RightPanel } from "../rightpanel/RightPanel";
+import MarketJobGrid from "../components/MarketJobGrid";
+import { CenterPanelShell } from "./CenterPanelShell";
 
 const PIPELINE_STATES = ["saved", "applied", "interview", "offer"];
 const SAVED_STATES = PIPELINE_STATES;
 
 export function App() {
   // --- State ---
-  const [selectedJob, setSelectedJob] = useState<any>(null); // State to track the active selection
+  const [searchParams, setSearchParams] = useSearchParams();
   const [hydratedContent, setHydratedContent] = useState<string | null>(null);
   type Requirement = {
   requirement_text: string;
@@ -30,21 +33,11 @@ const [additionalContext, setAdditionalContext] = useState("");
 const [isInterpreting, setIsInterpreting] = useState(false);
 const [loadingArtifacts, setLoadingArtifacts] = useState(false);
 const [availableJobs, setAvailableJobs] = useState<any[]>([]);
-const [filters, setFilters] = useState({
-  location: "",
-  role: "",
-  experience: "",
-  company: "",
-  signals: [] as string[],
-  aiOnly: false,
-});
-const [exploreSearchInput, setExploreSearchInput] = useState("");
-const [activeSignalFilter, setActiveSignalFilter] = useState<string[]>([]);
 const [viewMode, setViewMode] = useState<"feed" | "saved">("feed");
-const [page, setPage] = useState(1);
-const [pageSize] = useState(50);
+const pageSize = 50;
 const [totalJobs, setTotalJobs] = useState(0);
 const phase6Ref = useRef<Phase6SidePanelHandle | null>(null);
+const mainContentRef = useRef<HTMLElement | null>(null);
 const jobDescriptionRef = useRef<HTMLDivElement | null>(null);
 const hydrationCache = useRef<Record<string, string>>({});
 const interpretationCache = useRef<Record<string, any>>({});
@@ -55,6 +48,65 @@ const [previewVersion, setPreviewVersion] = useState(0);
 const [marketAlignment, setMarketAlignment] = useState<Record<string, number>>({});
 const [marketAlignmentLoaded, setMarketAlignmentLoaded] = useState(false);
 const [interpretationNotice, setInterpretationNotice] = useState<string | null>(null);
+const [newJobsCount, setNewJobsCount] = useState<number | null>(null);
+const [jobListScrollTop, setJobListScrollTop] = useState(0);
+const [scrollRestoreKey] = useState(0);
+const [searchDraft, setSearchDraft] = useState("");
+const isEditingTopSearchRef = useRef(false);
+const [activeRole, setActiveRole] = useState<string | null>(null);
+const pendingAutoSelectRoleRef = useRef<string | null>(null);
+type SkippedEntry = { job: any; index: number };
+const [skippedHistory, setSkippedHistory] = useState<SkippedEntry[]>([]);
+const skippedHistoryRef = useRef<SkippedEntry[]>([]);
+
+const roleCategory = (searchParams.get("role") ?? "").trim().toLowerCase();
+const searchQuery = (searchParams.get("q") ?? "").trim();
+const locationFilter = (searchParams.get("location") ?? "").trim();
+const experienceFilter = (searchParams.get("experience") ?? "").trim();
+const companyFilter = (searchParams.get("company") ?? "").trim();
+const signalsFilter = (searchParams.get("signals") ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const aiOnlyFilter = searchParams.get("aiOnly") === "1";
+const page = Math.max(1, Number(searchParams.get("page") || "1"));
+const selectedJobId = (searchParams.get("selected") ?? "").trim();
+
+const filters = {
+  location: locationFilter,
+  role: searchQuery,
+  experience: experienceFilter,
+  company: companyFilter,
+  signals: signalsFilter,
+  aiOnly: aiOnlyFilter,
+};
+const activeSignalFilter = roleCategory ? [roleCategory] : [];
+const roleOptions = (Object.keys(marketAlignment).length > 0
+  ? Object.keys(marketAlignment)
+  : ["ai", "backend", "platform", "data"]
+).sort();
+const apiBase = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const apiUrl = (path: string) => `${apiBase}${path}`;
+
+useEffect(() => {
+  if (isEditingTopSearchRef.current) return;
+  setSearchDraft(searchQuery);
+}, [searchQuery]);
+
+useEffect(() => {
+  const fetchNewJobsCount = async () => {
+    try {
+      const res = await fetch(apiUrl("/api/new-jobs-count"));
+      const data = await res.json();
+      setNewJobsCount(typeof data?.new_jobs === "number" ? data.new_jobs : 0);
+    } catch (err) {
+      console.error("Failed to load new jobs count:", err);
+      setNewJobsCount(0);
+    }
+  };
+
+  fetchNewJobsCount();
+}, []);
 
 useEffect(() => {
   const fetchJobs = async () => {
@@ -73,17 +125,30 @@ useEffect(() => {
         params.set("page_size", String(pageSize));
         const query = params.toString();
 
-        res = await fetch(
-          `http://localhost:8000/api/discovery-feed${query ? `?${query}` : ""}`
-        );
+        res = await fetch(apiUrl(`/api/discovery-feed${query ? `?${query}` : ""}`));
       } else {
-        res = await fetch("http://localhost:8000/api/saved-jobs");
+        res = await fetch(apiUrl("/api/saved-jobs"));
+      }
+
+      if (!res.ok) {
+        console.error("Discovery API returned non-OK response", res.status);
+        setAvailableJobs([]);
+        setTotalJobs(0);
+        return;
       }
 
       const data = await res.json();
-      setTotalJobs(viewMode === "feed" ? (data.total_jobs ?? 0) : (data.jobs?.length ?? 0));
+      if (!data) {
+        console.error("Discovery API returned null");
+        setAvailableJobs([]);
+        setTotalJobs(0);
+        return;
+      }
 
-      const jobs = data.jobs.map((j: any) => ({
+      const rawJobs = Array.isArray(data.jobs) ? data.jobs : [];
+      setTotalJobs(viewMode === "feed" ? (data.total_jobs ?? 0) : rawJobs.length);
+
+      const jobs = rawJobs.map((j: any) => ({
         id: j.job_id,
         title: j.title,
         company: j.company,
@@ -105,19 +170,21 @@ useEffect(() => {
       );
     } catch (err) {
       console.error("Failed to load discovery feed:", err);
+      setAvailableJobs([]);
+      setTotalJobs(0);
     }
   };
 
   fetchJobs();
 }, [
   viewMode,
-  filters.role,
-  filters.location,
-  filters.experience,
-  filters.company,
-  filters.signals,
-  filters.aiOnly,
-  activeSignalFilter,
+  searchQuery,
+  locationFilter,
+  experienceFilter,
+  companyFilter,
+  aiOnlyFilter,
+  roleCategory,
+  searchParams.get("signals"),
   page,
   pageSize,
 ]);
@@ -125,7 +192,7 @@ useEffect(() => {
 useEffect(() => {
   const fetchMarketAlignment = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/market-alignment");
+      const res = await fetch(apiUrl("/api/market-alignment"));
       const data = await res.json();
       setMarketAlignment(
         data?.alignment && typeof data.alignment === "object" ? data.alignment : {}
@@ -141,24 +208,15 @@ useEffect(() => {
   fetchMarketAlignment();
 }, [
   viewMode,
-  filters.role,
-  filters.location,
-  filters.experience,
-  filters.company,
-  filters.signals,
-  filters.aiOnly,
-  activeSignalFilter,
+  searchQuery,
+  locationFilter,
+  experienceFilter,
+  companyFilter,
+  aiOnlyFilter,
+  roleCategory,
+  searchParams.get("signals"),
   page,
 ]);
-
-useEffect(() => {
-  setExploreSearchInput(filters.role);
-}, [filters.role]);
-
-useEffect(() => {
-  setPage(1);
-  setSelectedJob(null);
-}, [viewMode]);
 
 useEffect(() => {
   if (view !== "raw") return;
@@ -187,35 +245,111 @@ const visibleJobs = availableJobs.filter((job) => {
 
   return matchesDomain && matchesSignals && matchesAi;
 });
+const displayedJobs = viewMode === "feed" ? visibleJobs : availableJobs;
+const locallyFilteredJobs = activeRole
+  ? displayedJobs.filter((job: any) => {
+      const roleCategoryValue = String(job?.role_category ?? "").toLowerCase();
+      const signals = Array.isArray(job?.signals)
+        ? job.signals.map((s: string) => String(s).toLowerCase())
+        : [];
+      const normalizedActiveRole = activeRole.toLowerCase();
+      return roleCategoryValue === normalizedActiveRole || signals.includes(normalizedActiveRole);
+    })
+  : displayedJobs;
+const selectedJob =
+  displayedJobs.find((job) => job.id === selectedJobId) ??
+  availableJobs.find((job) => job.id === selectedJobId) ??
+  null;
+
+const setPage: React.Dispatch<React.SetStateAction<number>> = (value) => {
+  const nextPage = Math.max(1, typeof value === "function" ? value(page) : value);
+  updateUrlParams((params) => {
+    params.set("page", String(nextPage));
+  });
+};
+
+const updateUrlParams = (mutate: (params: URLSearchParams) => void) => {
+  const next = new URLSearchParams(searchParams);
+  mutate(next);
+  setSearchParams(next);
+};
+
+const setSelectedJobParam = (jobId: string | null) => {
+  updateUrlParams((params) => {
+    if (jobId) {
+      params.set("selected", jobId);
+    } else {
+      params.delete("selected");
+    }
+  });
+};
+
+const pushSkippedHistory = (entry: SkippedEntry) => {
+  const next = [...skippedHistoryRef.current, entry];
+  skippedHistoryRef.current = next;
+  setSkippedHistory(next);
+};
+
+const popSkippedHistory = (): SkippedEntry | null => {
+  const current = skippedHistoryRef.current;
+  if (current.length === 0) return null;
+  const entry = current[current.length - 1];
+  const next = current.slice(0, -1);
+  skippedHistoryRef.current = next;
+  setSkippedHistory(next);
+  return entry;
+};
+
+const handleSelectRoleCategory = (signal: string) => {
+  updateUrlParams((params) => {
+    params.set("role", signal.toLowerCase());
+    params.set("page", "1");
+    params.delete("selected");
+  });
+  setViewMode("feed");
+};
 
 const updateFilters = (
   updater:
     | Partial<typeof filters>
     | ((prev: typeof filters) => Partial<typeof filters> | typeof filters)
 ) => {
-  setFilters((prev) => {
-    const patch = typeof updater === "function" ? updater(prev) : updater;
-    return { ...prev, ...patch };
+  const patch = typeof updater === "function" ? updater(filters) : updater;
+  const nextFilters = { ...filters, ...patch };
+  updateUrlParams((params) => {
+    if (nextFilters.location.length > 0) params.set("location", nextFilters.location);
+    else params.delete("location");
+
+    if (nextFilters.role.length > 0) params.set("q", nextFilters.role);
+    else params.delete("q");
+
+    if (nextFilters.experience.length > 0) params.set("experience", nextFilters.experience);
+    else params.delete("experience");
+
+    if (nextFilters.company.length > 0) params.set("company", nextFilters.company);
+    else params.delete("company");
+
+    if (nextFilters.signals.length > 0) params.set("signals", nextFilters.signals.join(","));
+    else params.delete("signals");
+
+    if (nextFilters.aiOnly) params.set("aiOnly", "1");
+    else params.delete("aiOnly");
+
+    params.set("page", "1");
+    params.delete("selected");
   });
-  setPage(1);
 };
 
 const performSearch = () => {
-  updateFilters({ role: exploreSearchInput.trim() });
-  setActiveSignalFilter([]);
+  updateFilters({ role: searchDraft.trim() });
   setViewMode("feed");
-  setSelectedJob(null);
 };
 
  // --- Handlers ---
  const handleJobSelect = (job: any) => {
-  if (viewMode === "saved" && selectedJob?.id === job.id) {
-    setSelectedJob(null);
-    return;
-  }
   const cachedHydration = hydrationCache.current[job.id];
   phase6Ref.current?.reset();
-  setSelectedJob(job);
+  setSelectedJobParam(job.id);
   if (cachedHydration) {
     setHydratedContent(cachedHydration);
     setHydrationIncomplete(looksIncomplete(cachedHydration));
@@ -238,7 +372,7 @@ const performSearch = () => {
  const handleUpdateJobState = async (jobId: string, newState: string) => {
   try {
     const response = await fetch(
-      "http://localhost:8000/api/job-state",
+      apiUrl("/api/job-state"),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -265,15 +399,13 @@ const performSearch = () => {
       return updated;
     });
 
-    setSelectedJob((prev: any) => {
-      if (!prev || prev.id !== jobId) {
-        return prev;
-      }
-      if (viewMode === "saved" && !SAVED_STATES.includes(newState)) {
-        return null;
-      }
-      return { ...prev, state: newState };
-    });
+    if (
+      selectedJobId === jobId &&
+      viewMode === "saved" &&
+      !SAVED_STATES.includes(newState)
+    ) {
+      setSelectedJobParam(null);
+    }
   } catch (error) {
     console.error("Failed to update job state:", error);
   }
@@ -283,6 +415,169 @@ const performSearch = () => {
   const targetState = currentState === "saved" ? "archived" : "saved";
   await handleUpdateJobState(jobId, targetState);
 };
+
+const handleIgnoreJob = async (jobId: string) => {
+  const navigableJobs = viewMode === "feed" ? visibleJobs : availableJobs;
+  const currentIndex = navigableJobs.findIndex((job) => job.id === jobId);
+  const nextJob =
+    (currentIndex >= 0 ? navigableJobs[currentIndex + 1] : null) ??
+    (currentIndex >= 0 ? navigableJobs[currentIndex - 1] : null) ??
+    null;
+  const sourceIndex = availableJobs.findIndex((job) => job.id === jobId);
+  const skippedJob = sourceIndex >= 0 ? availableJobs[sourceIndex] : null;
+
+  try {
+    const response = await fetch(apiUrl("/api/job-ignore"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_id: jobId }),
+    });
+
+    if (!response.ok) {
+      let detail = "";
+      try {
+        const err = await response.json();
+        detail = err?.detail ?? "";
+      } catch {
+        detail = "";
+      }
+      console.error("Failed to ignore job", detail || response.status);
+      return;
+    }
+
+    if (skippedJob) {
+      pushSkippedHistory({ job: skippedJob, index: sourceIndex });
+    }
+
+    setAvailableJobs((prev) => prev.filter((job) => job.id !== jobId));
+    setTotalJobs((prev) => Math.max(0, prev - 1));
+    if (selectedJobId === jobId) {
+      setSelectedJobParam(nextJob?.id ?? null);
+    }
+  } catch (error) {
+    console.error("Failed to ignore job:", error);
+  }
+};
+
+const handleUndoSkip = async () => {
+  const entry = popSkippedHistory();
+  if (!entry) return;
+
+  try {
+    const response = await fetch(
+      apiUrl(`/api/job-state?job_id=${encodeURIComponent(entry.job.id)}`),
+      { method: "DELETE" }
+    );
+
+    if (!response.ok) {
+      pushSkippedHistory(entry);
+      return;
+    }
+
+    setAvailableJobs((prev) => {
+      if (prev.some((job) => job.id === entry.job.id)) {
+        return prev;
+      }
+      const next = [...prev];
+      const insertAt = Math.max(0, Math.min(entry.index, next.length));
+      next.splice(insertAt, 0, entry.job);
+      return next;
+    });
+    setTotalJobs((prev) => prev + 1);
+    setSelectedJobParam(entry.job.id);
+  } catch (error) {
+    pushSkippedHistory(entry);
+    console.error("Failed to undo skipped job:", error);
+  }
+};
+
+useEffect(() => {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!selectedJob) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+    const target = event.target as HTMLElement | null;
+    const tag = target?.tagName;
+    const isEditable =
+      tag === "INPUT" ||
+      tag === "TEXTAREA" ||
+      tag === "SELECT" ||
+      !!target?.isContentEditable;
+    if (isEditable) {
+      return;
+    }
+
+    const key = event.key.toLowerCase();
+    if (!["j", "s", "k", "o", "a"].includes(key)) return;
+
+    if (key === "s") {
+      event.preventDefault();
+      handleSaveJob(selectedJob.id, selectedJob.state);
+      return;
+    }
+
+    if (key === "k" && event.shiftKey) {
+      event.preventDefault();
+      handleUndoSkip();
+      return;
+    }
+
+    if (key === "k") {
+      event.preventDefault();
+      handleIgnoreJob(selectedJob.id);
+      return;
+    }
+
+    if (key === "o") {
+      event.preventDefault();
+      if (selectedJob.url) {
+        window.open(selectedJob.url, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
+
+    if (key === "j") {
+      const navigableJobs = viewMode === "feed" ? visibleJobs : availableJobs;
+      const currentIndex = navigableJobs.findIndex((job) => job.id === selectedJob.id);
+      if (currentIndex < 0) return;
+
+      const nextIndex = event.shiftKey ? currentIndex - 1 : currentIndex + 1;
+      if (nextIndex < 0 || nextIndex >= navigableJobs.length) return;
+
+      event.preventDefault();
+      handleJobSelect(navigableJobs[nextIndex]);
+      return;
+    }
+
+    if (key === "a") {
+      event.preventDefault();
+      requestInterpretation(selectedJob.id);
+    }
+  };
+
+  window.addEventListener("keydown", onKeyDown);
+  return () => {
+    window.removeEventListener("keydown", onKeyDown);
+  };
+}, [availableJobs, selectedJob, viewMode, visibleJobs, skippedHistory.length]);
+
+useEffect(() => {
+  if (viewMode !== "feed") return;
+  if (!pendingAutoSelectRoleRef.current) return;
+  if (pendingAutoSelectRoleRef.current !== roleCategory) return;
+  if (selectedJobId) return;
+  if (visibleJobs.length === 0) return;
+  setSelectedJobParam(visibleJobs[0].id);
+  pendingAutoSelectRoleRef.current = null;
+}, [viewMode, roleCategory, selectedJobId, visibleJobs]);
+
+useEffect(() => {
+  if (!selectedJobId) return;
+  mainContentRef.current?.scrollTo({
+    top: 0,
+    behavior: "auto",
+  });
+}, [selectedJobId]);
 
 useEffect(() => {
   if (!selectedJob) return;
@@ -294,34 +589,35 @@ useEffect(() => {
       if (hydrationCache.current[jobId]) {
         setHydratedContent(hydrationCache.current[jobId]);
         setHydrationIncomplete(looksIncomplete(hydrationCache.current[jobId]));
+      }
 
-        const cachedInterpretation = interpretationCache.current[jobId];
-        const cachedSpanMap = spanMapCache.current[jobId];
+      const cachedInterpretation = interpretationCache.current[jobId];
+      const cachedSpanMap = spanMapCache.current[jobId];
 
-        if (cachedInterpretation) {
-          setInterpretationResult(cachedInterpretation);
-          setSpanMap(cachedSpanMap ?? {});
-          phase6Ref.current?.restoreInterpreted(cachedInterpretation);
+      if (cachedInterpretation) {
+        setInterpretationResult(cachedInterpretation);
+        setSpanMap(cachedSpanMap ?? {});
+        phase6Ref.current?.restoreInterpreted(cachedInterpretation);
 
-          const explicit =
-            cachedInterpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
+        const explicit =
+          cachedInterpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
 
-          setRequirements(explicit);
-          setView("structured");
-        }
-
-        return;
+        setRequirements(explicit);
+        setView("structured");
       }
 
       const hydrationRes = await fetch(
-        `/api/hydrated-job?job_id=${encodeURIComponent(jobId)}`
+        apiUrl(`/api/hydrated-job?job_id=${encodeURIComponent(jobId)}`)
       );
 
       const hydrationData = await hydrationRes.json();
 
       if (hydrationData?.content) {
         setHydratedContent(hydrationData.content);
-        setHydrationIncomplete(looksIncomplete(hydrationData.content));
+        const source = String(hydrationData?.content_source ?? "").toLowerCase();
+        setHydrationIncomplete(
+          source === "discovery" ? false : looksIncomplete(hydrationData.content)
+        );
         hydrationCache.current[jobId] = hydrationData.content;
       } else {
         const hydratePayload = {
@@ -353,7 +649,7 @@ useEffect(() => {
     interpretationRequestInFlight.current = null;
     try {
       await fetch(
-        `/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`,
+        apiUrl(`/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`),
         { method: "DELETE" }
       );
     } catch (error) {
@@ -385,7 +681,7 @@ useEffect(() => {
   setIsReading(true);
   try {
     const response = await fetch(
-      "http://localhost:8000/api/hydrate-job",
+      apiUrl("/api/hydrate-job"),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -431,7 +727,7 @@ const handleManualInterpretation = async () => {
   setIsInterpreting(true);
   try {
     const res = await fetch(
-      "http://localhost:8000/api/interpret-manual",
+      apiUrl("/api/interpret-manual"),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -479,7 +775,7 @@ const handleReinterpretWithContext = async () => {
 
   setIsInterpreting(true);
   try {
-    const res = await fetch("http://localhost:8000/api/interpret-manual", {
+    const res = await fetch(apiUrl("/api/interpret-manual"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ raw_content: combinedContent }),
@@ -536,7 +832,7 @@ const handleReinterpretWithContext = async () => {
 
   try {
     const res = await fetch(
-      `/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`
+      apiUrl(`/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`)
     );
 
     const result = await res.json();
@@ -715,11 +1011,45 @@ function looksIncomplete(content: string): boolean {
   return shortContent || navHits >= 3;
 }
 
+function formatPostedDate(postedAt?: string | null): string {
+  if (!postedAt) {
+    return "Unknown date";
+  }
+  const posted = new Date(postedAt);
+  if (Number.isNaN(posted.getTime())) {
+    return "Unknown date";
+  }
+  return posted.toLocaleDateString();
+}
+
+function formatRoleLabel(role: string): string {
+  if (!role) return "All Roles";
+  return role
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function cleanEvidenceText(raw: string): string {
+  if (!raw) return "";
+
+  const withoutStyle = raw.replace(/<style[\s\S]*?<\/style>/gi, " ");
+  const withoutScript = withoutStyle.replace(/<script[\s\S]*?<\/script>/gi, " ");
+  const withoutTags = withoutScript.replace(/<[^>]+>/g, " ");
+
+  if (typeof document !== "undefined") {
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = withoutTags;
+    return textarea.value.replace(/\s+/g, " ").trim();
+  }
+
+  return withoutTags.replace(/\s+/g, " ").trim();
+}
+
 const resolveEvidenceTexts = (spanIds: string[] = []): string[] => {
   const seen = new Set<string>();
   const texts: string[] = [];
   for (const id of spanIds) {
-    const text = spanMap[id];
+    const text = cleanEvidenceText(spanMap[id] ?? "");
     if (!text || seen.has(text)) continue;
     seen.add(text);
     texts.push(text);
@@ -826,10 +1156,11 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
       }}>
           {/* 1. Daily Feed (Left Sidebar) */}
           <FeedSidebar
-              jobs={[]}
+              jobs={displayedJobs}
               selectedJob={selectedJob}
               onSelectJob={handleJobSelect}
               onSaveJob={handleSaveJob}
+              roleCategory={roleCategory}
               viewMode={viewMode}
               setViewMode={setViewMode}
               filters={{
@@ -851,28 +1182,71 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
               page={page}
               setPage={setPage}
               totalPages={totalPages}
+              initialScrollTop={jobListScrollTop}
+              scrollRestoreKey={scrollRestoreKey}
+              onScrollPositionChange={setJobListScrollTop}
           />
 
           {/* 2. Main Content Area (Center) */}
-          <main style={{
+          <main ref={mainContentRef} style={{
               flex: 1,
-              padding: "40px",
               backgroundColor: "#fafafa",
               height: "100vh",       // 🔥 fixed viewport height
               overflowY: "auto",     // 🔥 independent scroll
               display: "flex",
               flexDirection: "column"
           }}>
-              {viewMode === "saved" && !selectedJob ? (
-                  <SavedJobsBoard
-                      jobsByState={pipelineJobs}
-                      selectedJob={selectedJob}
-                      onSelectJob={handleJobSelect}
-                      onSaveJob={handleSaveJob}
-                      onUpdateJobState={handleUpdateJobState}
-                  />
+              <div style={{ padding: "40px" }}>
+              {viewMode === "saved" ? (
+                  <CenterPanelShell
+                    title="Saved Jobs Pipeline"
+                    subtitle="Drag jobs between columns to move them through your application process."
+                  >
+                    <SavedJobsBoard
+                        jobsByState={pipelineJobs}
+                        selectedJob={selectedJob}
+                        onSelectJob={handleJobSelect}
+                        toggleJobPriority={handleSaveJob}
+                        updateUserJobState={handleUpdateJobState}
+                        showHeader={false}
+                    />
+                  </CenterPanelShell>
               ) : !selectedJob ? (
-                  <div style={{ marginTop: "40px", color: "#333" }}>
+                  <CenterPanelShell
+                    title={roleCategory ? `${formatRoleLabel(roleCategory)} Roles` : "Daily Feed"}
+                    subtitle={
+                      roleCategory
+                        ? "Explore currently active jobs in this role track."
+                        : "Search and explore roles matching your strengths."
+                    }
+                    context={
+                      !roleCategory && newJobsCount !== null && newJobsCount > 0 ? (
+                        <div
+                          style={{
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            border: "1px solid #bfdbfe",
+                            background: "#eff6ff",
+                            color: "#1d4ed8",
+                            fontWeight: 600,
+                            maxWidth: "700px",
+                          }}
+                        >
+                          {newJobsCount} new jobs since your last visit
+                        </div>
+                      ) : undefined
+                    }
+                  >
+                  <div style={{ color: "#333" }}>
+                      {viewMode === "feed" && !!roleCategory && !selectedJobId ? (
+                        <MarketJobGrid
+                          jobs={displayedJobs}
+                          selectedJob={selectedJob}
+                          onSelectJob={handleJobSelect}
+                          onSaveJob={handleSaveJob}
+                        />
+                      ) : (
+                      <>
                       <h1 style={{ marginBottom: "8px" }}>Find a role</h1>
                       <form
                         onSubmit={(e) => {
@@ -884,8 +1258,14 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                         <div style={{ display: "flex", gap: "10px" }}>
                         <input
                           type="text"
-                          value={exploreSearchInput}
-                          onChange={(e) => setExploreSearchInput(e.target.value)}
+                          value={searchDraft}
+                          onChange={(e) => setSearchDraft(e.target.value)}
+                          onFocus={() => {
+                            isEditingTopSearchRef.current = true;
+                          }}
+                          onBlur={() => {
+                            isEditingTopSearchRef.current = false;
+                          }}
                           onKeyDown={(event) => {
                             if (event.key === "Enter") {
                               event.preventDefault();
@@ -940,20 +1320,23 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                               return (
                                 <div
                                   key={signal}
-                                  onClick={() => {
-                                    setViewMode("feed");
-                                    setActiveSignalFilter([signal]);
-                                    setSelectedJob(null);
-                                    setPage(1);
-                                  }}
+                                  onClick={() =>
+                                    setActiveRole(activeRole === signal ? null : signal)
+                                  }
                                   style={{
                                     padding: "16px",
-                                    border: "1px solid #e5e7eb",
+                                    border:
+                                      activeRole === signal
+                                        ? "1px solid #4f7fff"
+                                        : "1px solid #e5e7eb",
                                     borderRadius: "10px",
-                                    background: "#ffffff",
+                                    background: activeRole === signal ? "#eef2ff" : "#ffffff",
                                     cursor: "pointer",
                                     transition: "box-shadow 0.15s ease",
-                                    boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+                                    boxShadow:
+                                      activeRole === signal
+                                        ? "0 4px 12px rgba(79,127,255,0.18)"
+                                        : "0 1px 2px rgba(0,0,0,0.06)",
                                   }}
                                   onMouseEnter={(e) => {
                                     e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)";
@@ -1005,72 +1388,47 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                         </div>
                       )}
                       {(activeSignalFilter.length > 0 || filters.role.trim().length > 0) && (
-                        <div style={{ marginTop: "30px" }}>
-                          <h3 style={{ marginBottom: "10px" }}>
-                            {activeSignalFilter.length > 0
-                              ? `Showing ${activeSignalFilter[0]} roles`
-                              : `Showing results for "${filters.role.trim()}"`}
-                          </h3>
-
-                          <div style={{ display: "grid", gap: "12px", maxWidth: "720px" }}>
-                            {visibleJobs.length > 0 ? (
-                              visibleJobs.map((job: any) => (
-                                <JobCard
-                                  key={job.id}
-                                  job={job}
-                                  selected={false}
-                                  onClick={() => handleJobSelect(job)}
-                                  onSave={() => handleSaveJob(job.id, job.state)}
-                                />
-                              ))
-                            ) : (
-                              <div style={{ color: "#666", fontSize: "14px" }}>
-                                No matching roles found.
-                              </div>
-                            )}
-                          </div>
+                        <div style={{ marginTop: "30px", color: "#555", fontSize: "14px" }}>
+                          {visibleJobs.length > 0
+                            ? `Select a role from the left list (${visibleJobs.length} shown).`
+                            : "No matching roles found."}
                         </div>
                       )}
-                  </div>
-              ) : (
-                  <>
-                      {viewMode === "saved" && (
-                          <button
-                              onClick={() => setSelectedJob(null)}
-                              style={{
-                                  alignSelf: "flex-start",
-                                  marginBottom: "12px",
-                                  border: "1px solid #ddd",
-                                  background: "#fff",
-                                  borderRadius: "8px",
-                                  padding: "8px 12px",
-                                  cursor: "pointer",
-                                  fontWeight: 600,
-                              }}
-                          >
-                              ← Back to pipeline
-                          </button>
+                      <MarketJobGrid
+                        jobs={locallyFilteredJobs}
+                        selectedJob={selectedJob}
+                        onSelectJob={handleJobSelect}
+                        onSaveJob={handleSaveJob}
+                      />
+                      </>
                       )}
+                  </div>
+                  </CenterPanelShell>
+              ) : (
+                  <CenterPanelShell
+                    title={selectedJob.title}
+                    subtitle={[selectedJob.company, selectedJob.location, `Posted ${formatPostedDate(selectedJob.posted_at)}`]
+                      .filter(Boolean)
+                      .join(" • ")}
+                    actions={(
                       <button
-                          onClick={() => {
-                            setSelectedJob(null);
-                            setActiveSignalFilter([]);
-                            setViewMode("feed");
-                          }}
-                          style={{
-                              marginBottom: "16px",
-                              background: "transparent",
-                              border: "none",
-                              color: "#4f7fff",
-                              cursor: "pointer",
-                              fontSize: "14px",
-                              fontWeight: 500,
-                              alignSelf: "flex-start",
-                              padding: 0,
-                          }}
+                        onClick={() => setSelectedJobParam(null)}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: "999px",
+                          border: "1px solid #d1d5db",
+                          background: "#fff",
+                          color: "#374151",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                        title="Back to role jobs"
                       >
-                          ← Back to Market
+                        ← {formatRoleLabel(roleCategory)} roles
                       </button>
+                    )}
+                  >
                       {isReading && (
                         <div style={{ display: "flex", alignItems: "center", marginBottom: "12px", color: "#0070f3", fontWeight: 500 }}>
                           <div style={spinnerStyle}></div>
@@ -1134,7 +1492,7 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                               </div>
 
                               <embed
-                                  src={`http://localhost:8000/api/user-preview?url=${encodeURIComponent(userPreviewUrl)}&v=${previewVersion}`}
+                                  src={apiUrl(`/api/user-preview?url=${encodeURIComponent(userPreviewUrl)}&v=${previewVersion}`)}
                                   type="application/pdf"
                                   style={{width: "100%", height: "70vh", border: "0"}}
                               />
@@ -1157,6 +1515,24 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                               }}
                           >
                               {selectedJob.state === "saved" ? "★ Saved" : "⭐ Save Job"}
+                          </button>
+                          <button
+                              onClick={() => handleIgnoreJob(selectedJob.id)}
+                              style={{
+                                  padding: "10px 14px",
+                                  borderRadius: "8px",
+                                  border: "1px solid #ddd",
+                                  color: "#6b7280",
+                                  textDecoration: "none",
+                                  fontWeight: 600,
+                                  background: "#fff",
+                                  marginRight: "8px",
+                                  cursor: "pointer"
+                              }}
+                              title="Skip job"
+                              aria-label="Skip job"
+                          >
+                              × Skip
                           </button>
                           <label style={{ marginRight: "8px", color: "#555", fontSize: "14px" }}>
                               Status
@@ -1399,12 +1775,13 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                               )}
                           </div>
                       )}
-                  </>
+                  </CenterPanelShell>
               )}
+              </div>
           </main>
 
           {/* 3. Authority SidePanel (Right) */}
-          {selectedJob && (
+          {viewMode === "feed" && selectedJob && (
               <div style={{
                   width: "360px",
                   borderLeft: "1px solid #eee",
