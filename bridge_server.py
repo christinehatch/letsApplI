@@ -477,7 +477,7 @@ async def new_jobs_count():
     from persistence.db import get_connection
     from persistence.repos.jobs_repo import JobsRepo
     from state import DB_PATH
-    from user_session import get_last_seen, update_last_seen
+    from src.user_session import get_last_seen, update_last_seen
 
     last_seen_at = get_last_seen()
     new_jobs = 0
