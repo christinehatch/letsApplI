@@ -33,6 +33,7 @@ type SavedJobsBoardProps = {
   onSelectJob: (job: Job) => void;
   toggleJobPriority: (jobId: string, currentState?: string | null) => void;
   updateUserJobState: (jobId: string, newState: string) => void;
+  showHeader?: boolean;
 };
 
 const PIPELINE_STATES = ["saved", "applied", "interview", "offer"] as const;
@@ -101,6 +102,7 @@ export function SavedJobsBoard({
   onSelectJob,
   toggleJobPriority,
   updateUserJobState,
+  showHeader = true,
 }: SavedJobsBoardProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -149,14 +151,16 @@ export function SavedJobsBoard({
       }}
       onDragCancel={() => setActiveJob(null)}
     >
-      <div style={{ marginBottom: "24px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
-          <h1 style={{ margin: 0, fontSize: "24px", color: "#111827" }}>Saved Jobs Pipeline</h1>
+      {showHeader && (
+        <div style={{ marginBottom: "24px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
+            <h1 style={{ margin: 0, fontSize: "24px", color: "#111827" }}>Saved Jobs Pipeline</h1>
+          </div>
+          <p style={{ margin: "8px 0 0 0", color: "#666", fontSize: "13px" }}>
+            Drag jobs between columns to move them through your application process.
+          </p>
         </div>
-        <p style={{ margin: "8px 0 0 0", color: "#666", fontSize: "13px" }}>
-          Drag jobs between columns to move them through your application process.
-        </p>
-      </div>
+      )}
       <div
         style={{
           display: "grid",
