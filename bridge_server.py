@@ -61,6 +61,7 @@ async def startup_event():
     from persistence.migrate import migrate
     from state import DB_PATH
 
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     migrate(DB_PATH)
 
     conn = get_connection(DB_PATH)
