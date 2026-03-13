@@ -29,6 +29,18 @@ class JobsRepo:
 
         return [JobRecord(**row) for row in rows]
 
+    def count_jobs_since(self, timestamp: str) -> int:
+        row = self.conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM jobs
+            WHERE is_archived = 0
+              AND discovered_at > ?
+            """,
+            (timestamp,),
+        ).fetchone()
+        return int(row[0]) if row else 0
+
     def upsert_discovered_job(
         self,
         provider: str,
@@ -136,7 +148,13 @@ class JobsRepo:
             f"""
             SELECT COUNT(*)
             FROM jobs
+            LEFT JOIN job_user_state
+              ON jobs.provider_job_key = job_user_state.job_id
             WHERE {' AND '.join(where)}
+              AND (
+                job_user_state.state IS NULL
+                OR job_user_state.state = 'discovered'
+              )
             """,
             tuple(params),
         ).fetchone()
@@ -170,6 +188,10 @@ class JobsRepo:
             LEFT JOIN job_interpretations ji
               ON jobs.provider_job_key = ji.job_id
             WHERE {' AND '.join(where)}
+              AND (
+                job_user_state.state IS NULL
+                OR job_user_state.state = 'discovered'
+              )
             ORDER BY {order_by}
             LIMIT ?
             OFFSET ?
