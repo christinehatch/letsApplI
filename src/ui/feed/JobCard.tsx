@@ -16,8 +16,10 @@ type JobCardProps = {
   selected: boolean;
   onClick: () => void;
   onSave: () => void;
+  onSkip?: () => void;
   onStatusChange?: (newStatus: string) => void;
   isDragging?: boolean;
+  variant?: "default" | "row" | "board";
 };
 
 function formatProvider(provider?: string): string {
@@ -114,83 +116,158 @@ export const JobCard = memo(function JobCard({
   selected,
   onClick,
   onSave,
+  onSkip,
   onStatusChange,
   isDragging = false,
+  variant = "default",
 }: JobCardProps) {
+  const [isHovered, setIsHovered] = React.useState(false);
   const SAVED_STATES = ["saved", "applied", "interview", "offer"];
   const formattedPostedDate = formatPostedDate(job.posted_at);
   const formattedProvider = formatProvider(job.provider);
   const stateLabel = formatStateLabel(job.state);
   const isSaved = SAVED_STATES.includes(job.state ?? "");
   const showAiBadge = isLikelyAiRole(job.title);
+  const isRow = variant === "row";
+  const isBoard = variant === "board";
+
   const cardStyle: React.CSSProperties = {
-    position: "relative",
-    padding: "16px",
-    borderRadius: "12px",
-    marginBottom: "12px",
-    border: selected ? "2px solid #4F7FFF" : "1px solid #eee",
-    background: selected ? "#F5F8FF" : "#fff",
+    padding: isRow ? "12px" : "14px",
+    borderRadius: isRow ? "8px" : "10px",
+    marginBottom: isRow ? "10px" : isBoard ? "0" : "12px",
+    border: isRow ? "1px solid #e5e7eb" : selected ? "1px solid #cddcff" : "1px solid transparent",
+    background: isRow
+      ? selected
+        ? "#eef3ff"
+        : isHovered
+          ? "#f8fafc"
+          : "#fff"
+      : selected
+        ? "#eef3ff"
+        : "#fff",
     cursor: "pointer",
     opacity: isDragging ? 0.9 : 1,
-    transform: isDragging ? "scale(1.02)" : "none",
-    boxShadow: isDragging ? "0 10px 25px rgba(0,0,0,0.2)" : "none",
+    transform: isDragging ? "scale(1.02)" : !isRow && isHovered ? "translateY(-1px)" : "none",
+    boxShadow: isDragging
+      ? "0 10px 25px rgba(0,0,0,0.2)"
+      : !isRow && isHovered
+        ? "0 2px 4px rgba(0,0,0,0.08)"
+        : !isRow
+          ? "0 1px 2px rgba(0,0,0,0.05)"
+          : "none",
+    transition: "background-color 120ms ease, box-shadow 120ms ease, transform 120ms ease",
+    width: "100%",
+    boxSizing: "border-box",
   };
 
   return (
-    <div onClick={onClick} style={cardStyle}>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onSave();
-        }}
-        style={{
-          position: "absolute",
-          top: "12px",
-          right: "12px",
-          fontSize: "16px",
-          cursor: "pointer",
-          border: "none",
-          background: "transparent",
-          color: isSaved ? "#f5b400" : "#ccc",
-          padding: 0,
-          lineHeight: 1,
-        }}
-        aria-label={isSaved ? "Saved" : "Save"}
-        title={isSaved ? "Saved" : "Save"}
-      >
-        {isSaved ? "★" : "☆"}
-      </button>
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={cardStyle}
+    >
       <div
         style={{
-          fontSize: "12px",
-          fontWeight: "bold",
-          color: "#0070f3",
-          marginBottom: "4px",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: "8px",
         }}
       >
-        {job.company}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <div style={{ fontWeight: 600, fontSize: "14px" }}>{job.title}</div>
-        {showAiBadge && (
-          <span
+        <div style={{ minWidth: 0 }}>
+          <div
             style={{
-              fontSize: "11px",
-              background: "#eef2ff",
-              color: "#4338ca",
-              padding: "2px 6px",
-              borderRadius: "6px",
-              marginLeft: "6px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginBottom: "4px",
             }}
           >
-            🧠 AI
-          </span>
+            <div
+              style={{
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "#2b6cb0",
+              }}
+            >
+              {job.company}
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSave();
+              }}
+              style={{
+                fontSize: "14px",
+                cursor: "pointer",
+                border: "none",
+                background: "transparent",
+                color: isSaved ? "#f5b400" : "#bbb",
+                borderRadius: "4px",
+                padding: 0,
+                lineHeight: 1,
+              }}
+              aria-label={isSaved ? "Saved" : "Save"}
+              title={isSaved ? "Saved" : "Save"}
+            >
+              {isSaved ? "★" : "☆"}
+            </button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <div
+              style={{
+                fontWeight: 600,
+                fontSize: "15px",
+                color: "#111",
+                wordBreak: "break-word",
+                lineHeight: 1.3,
+              }}
+            >
+              {job.title}
+            </div>
+            {showAiBadge && (
+              <span
+                style={{
+                  fontSize: "11px",
+                  background: "#eef2ff",
+                  color: "#4338ca",
+                  padding: "2px 6px",
+                  borderRadius: "6px",
+                }}
+              >
+                🧠 AI
+              </span>
+            )}
+          </div>
+        </div>
+        {onSkip && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onSkip();
+            }}
+            style={{
+              fontSize: "18px",
+              cursor: "pointer",
+              border: "none",
+              background: "transparent",
+              color: "#9ca3af",
+              borderRadius: "6px",
+              padding: 0,
+              lineHeight: 1,
+            }}
+            aria-label="Skip"
+            title="Skip"
+          >
+            ×
+          </button>
         )}
       </div>
       {job.location && (
         <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>{job.location}</div>
       )}
-      <div style={{ fontSize: "12px", color: "#666", marginTop: "6px" }}>
+      <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
         Posted {formattedPostedDate} • {formattedProvider}
       </div>
       {stateLabel && (
@@ -199,7 +276,7 @@ export const JobCard = memo(function JobCard({
             marginTop: "8px",
             fontSize: "12px",
             color: stateBadgeColor(job.state),
-            fontWeight: 600,
+            fontWeight: 500,
           }}
         >
           {stateLabel}
@@ -216,7 +293,7 @@ export const JobCard = memo(function JobCard({
             }}
             style={{
               width: "100%",
-              padding: "6px 8px",
+              padding: "8px 10px",
               border: "1px solid #ddd",
               borderRadius: "6px",
               fontSize: "12px",

@@ -21,6 +21,9 @@ type JobListProps = {
   onSelectJob: (job: Job) => void;
   onSaveJob: (jobId: string, currentState?: string | null) => void;
   viewMode: "feed" | "saved";
+  initialScrollTop: number;
+  scrollRestoreKey: number;
+  onScrollPositionChange: (scrollTop: number) => void;
 };
 
 const SIGNAL_WEIGHTS: Record<string, number> = {
@@ -85,39 +88,75 @@ function classify_discovery_jobs(jobs: Job[]): {
   return grouped;
 }
 
-export function JobList({ jobs, selectedJob, onSelectJob, onSaveJob, viewMode }: JobListProps) {
+export function JobList({
+  jobs,
+  selectedJob,
+  onSelectJob,
+  onSaveJob,
+  viewMode,
+  initialScrollTop,
+  scrollRestoreKey,
+  onScrollPositionChange,
+}: JobListProps) {
+  const listRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!listRef.current) return;
+    listRef.current.scrollTop = initialScrollTop;
+  }, [initialScrollTop, scrollRestoreKey]);
+
+  React.useEffect(() => {
+    if (!selectedJob?.id || !listRef.current) return;
+    const nodes = listRef.current.querySelectorAll<HTMLElement>("[data-job-id]");
+    const match = Array.from(nodes).find((node) => node.dataset.jobId === selectedJob.id);
+    if (match) {
+      match.scrollIntoView({ block: "nearest" });
+    }
+  }, [selectedJob?.id]);
+
   const renderJob = (job: Job) => (
-    <JobCard
-      key={job.id}
-      job={job}
-      selected={selectedJob?.id === job.id}
-      onClick={() => onSelectJob(job)}
-      onSave={() => onSaveJob(job.id, job.state)}
-    />
+    <div key={job.id} data-job-id={job.id}>
+      <JobCard
+        job={job}
+        selected={selectedJob?.id === job.id}
+        onClick={() => onSelectJob(job)}
+        onSave={() => onSaveJob(job.id, job.state)}
+        variant="row"
+      />
+    </div>
   );
 
   const grouped = classify_discovery_jobs(jobs);
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "0 20px" }}>
+    <div
+      ref={listRef}
+      onScroll={(e) => onScrollPositionChange(e.currentTarget.scrollTop)}
+      style={{
+        flex: 1,
+        overflowY: "auto",
+        padding: "12px 16px 16px 16px",
+        boxSizing: "border-box",
+      }}
+    >
       {viewMode !== "feed" && jobs.map(renderJob)}
       {viewMode === "feed" && (
         <>
           {grouped.new_today_high.length > 0 && (
-            <section>
-              <h2 style={{ fontSize: "14px", margin: "8px 0 10px 0", color: "#444" }}>🔥 New Today</h2>
+            <section style={{ padding: "0 0 16px 0" }}>
+              <h2 style={{ fontSize: "13px", margin: "12px 0", color: "#666" }}>🔥 New Today</h2>
               {grouped.new_today_high.map(renderJob)}
             </section>
           )}
           {grouped.new_today_low.length > 0 && (
-            <section>
-              <h2 style={{ fontSize: "14px", margin: "8px 0 10px 0", color: "#444" }}>🟡 Lower Priority</h2>
+            <section style={{ padding: "0 0 16px 0" }}>
+              <h2 style={{ fontSize: "13px", margin: "12px 0", color: "#666" }}>🟡 Lower Priority</h2>
               {grouped.new_today_low.map(renderJob)}
             </section>
           )}
           {grouped.skipped.length > 0 && (
-            <section>
-              <h2 style={{ fontSize: "14px", margin: "8px 0 10px 0", color: "#444" }}>🧊 Skipped</h2>
+            <section style={{ padding: "0 0 16px 0" }}>
+              <h2 style={{ fontSize: "13px", margin: "12px 0", color: "#666" }}>🧊 Skipped</h2>
               {grouped.skipped.map(renderJob)}
             </section>
           )}

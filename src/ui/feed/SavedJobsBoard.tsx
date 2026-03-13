@@ -31,8 +31,8 @@ type SavedJobsBoardProps = {
   jobsByState: Record<string, Job[]>;
   selectedJob: Job | null;
   onSelectJob: (job: Job) => void;
-  onSaveJob: (jobId: string, currentState?: string | null) => void;
-  onUpdateJobState: (jobId: string, newState: string) => void;
+  toggleJobPriority: (jobId: string, currentState?: string | null) => void;
+  updateUserJobState: (jobId: string, newState: string) => void;
 };
 
 const PIPELINE_STATES = ["saved", "applied", "interview", "offer"] as const;
@@ -41,14 +41,14 @@ function SortableJobCard({
   job,
   selected,
   onSelectJob,
-  onSaveJob,
-  onUpdateJobState,
+  toggleJobPriority,
+  updateUserJobState,
 }: {
   job: Job;
   selected: boolean;
   onSelectJob: (job: Job) => void;
-  onSaveJob: (jobId: string, currentState?: string | null) => void;
-  onUpdateJobState: (jobId: string, newState: string) => void;
+  toggleJobPriority: (jobId: string, currentState?: string | null) => void;
+  updateUserJobState: (jobId: string, newState: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: job.id,
@@ -56,19 +56,21 @@ function SortableJobCard({
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: "none",
     opacity: isDragging ? 0.7 : 1,
     touchAction: "none",
+    width: "100%",
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={{ ...style, position: "relative" }} {...attributes} {...listeners}>
       <JobCard
         job={job}
         selected={selected}
         onClick={() => onSelectJob(job)}
-        onSave={() => onSaveJob(job.id, job.state)}
-        onStatusChange={(newStatus) => onUpdateJobState(job.id, newStatus)}
+        onSave={() => toggleJobPriority(job.id, job.state)}
+        onStatusChange={(newStatus) => updateUserJobState(job.id, newStatus)}
+        variant="board"
       />
     </div>
   );
@@ -82,10 +84,10 @@ function DropColumn({ state, children }: { state: string; children: React.ReactN
       ref={setNodeRef}
       style={{
         background: isOver ? "#f0f7ff" : "#fafafa",
-        border: "1px solid #eee",
-        borderRadius: "8px",
-        padding: "10px",
+        borderRadius: "10px",
+        padding: "14px",
         minHeight: "140px",
+        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
       }}
     >
       {children}
@@ -97,10 +99,14 @@ export function SavedJobsBoard({
   jobsByState,
   selectedJob,
   onSelectJob,
-  onSaveJob,
-  onUpdateJobState,
+  toggleJobPriority,
+  updateUserJobState,
 }: SavedJobsBoardProps) {
-  const sensors = useSensors(useSensor(PointerSensor));
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
   const [activeJob, setActiveJob] = React.useState<Job | null>(null);
 
   const allJobs = PIPELINE_STATES.flatMap((state) => jobsByState[state] ?? []);
@@ -123,7 +129,7 @@ export function SavedJobsBoard({
     }
 
     if (dragged.state === newState) return;
-    onUpdateJobState(jobId, newState);
+    updateUserJobState(jobId, newState);
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -143,37 +149,58 @@ export function SavedJobsBoard({
       }}
       onDragCancel={() => setActiveJob(null)}
     >
+      <div style={{ marginBottom: "24px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
+          <h1 style={{ margin: 0, fontSize: "24px", color: "#111827" }}>Saved Jobs Pipeline</h1>
+        </div>
+        <p style={{ margin: "8px 0 0 0", color: "#666", fontSize: "13px" }}>
+          Drag jobs between columns to move them through your application process.
+        </p>
+      </div>
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(4, 1fr)",
-          gap: "12px",
+          gap: "24px",
         }}
       >
         {PIPELINE_STATES.map((state) => {
           const columnJobs = jobsByState[state] ?? [];
           return (
-            <div key={state}>
-              <h4 style={{ marginBottom: "10px", textTransform: "capitalize" }}>{state}</h4>
+            <div key={state} style={{ minWidth: 0 }}>
+              <h4
+                style={{
+                  marginBottom: "12px",
+                  textTransform: "capitalize",
+                  fontSize: "16px",
+                  fontWeight: 700,
+                  color: "#111827",
+                  letterSpacing: "0.01em",
+                }}
+              >
+                {state}
+              </h4>
               <DropColumn state={state}>
                 <SortableContext items={columnJobs.map((job) => job.id)} strategy={verticalListSortingStrategy}>
-                  {columnJobs.map((job) => (
-                    <SortableJobCard
-                      key={job.id}
-                      job={job}
-                      selected={selectedJob?.id === job.id}
-                      onSelectJob={onSelectJob}
-                      onSaveJob={onSaveJob}
-                      onUpdateJobState={onUpdateJobState}
-                    />
-                  ))}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {columnJobs.map((job) => (
+                      <SortableJobCard
+                        key={job.id}
+                        job={job}
+                        selected={selectedJob?.id === job.id}
+                        onSelectJob={onSelectJob}
+                        toggleJobPriority={toggleJobPriority}
+                        updateUserJobState={updateUserJobState}
+                      />
+                    ))}
+                  </div>
                 </SortableContext>
               </DropColumn>
             </div>
           );
         })}
       </div>
-      <DragOverlay>
+      <DragOverlay dropAnimation={null}>
         {activeJob ? (
           <div style={{ width: "280px" }}>
             <JobCard
