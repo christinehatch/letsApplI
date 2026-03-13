@@ -18,9 +18,31 @@ export type Phase6SidePanelHandle = {
 
 type ConsentScope = "interpret_job_posting";
 
+const actionButtonStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: "8px",
+  border: "1px solid #e5e7eb",
+  backgroundColor: "#f9fafb",
+  cursor: "pointer",
+  fontWeight: 500
+};
+
+const secondaryActionButtonStyle: React.CSSProperties = {
+  ...actionButtonStyle,
+  backgroundColor: "#fff",
+  color: "#555"
+};
+
 export interface Phase6SidePanelProps {
   jobId: string;
   jobTitle: string;
+  loadingArtifacts?: boolean;
+  additionalContext: string;
+  setAdditionalContext: (value: string) => void;
+  handleReinterpretWithContext: () => void;
+  isInterpreting: boolean;
+  hydrationIncomplete?: boolean;
   /**
    * Handoff hook to Phase 5.1.
    * Called only when state transitions to CONSENT_GRANTED.
@@ -56,9 +78,22 @@ export interface Phase6SidePanelProps {
 export const Phase6SidePanel = forwardRef<
   Phase6SidePanelHandle,
   Phase6SidePanelProps
->(function Phase6SidePanel({ jobId, jobTitle, onConsentGranted, onConsentRevoked }, ref) {
+>(function Phase6SidePanel({
+  jobId,
+  jobTitle,
+  loadingArtifacts = false,
+  additionalContext,
+  setAdditionalContext,
+  handleReinterpretWithContext,
+  isInterpreting,
+  hydrationIncomplete = false,
+  onConsentGranted,
+  onConsentRevoked
+}, ref) {
   const [state, setState] = useState<Phase6State>("VIEWING");
-  const [, setInterpretation] = useState<unknown | null>(null);
+  const [interpretationResult, setInterpretation] = useState<unknown | null>(null);
+  const [contextExpanded, setContextExpanded] = useState(false);
+  const hasInterpretation = !!interpretationResult;
 
   // ✅ NEW: Phase 6 is now the single place that decides what scope is being requested.
   const [requestedScope, setRequestedScope] =
@@ -107,6 +142,7 @@ export const Phase6SidePanel = forwardRef<
         }
         return prev;
       });
+      setInterpretation({});
     },
 
     restoreInterpreted: (interpretation: unknown) => {
@@ -116,11 +152,13 @@ export const Phase6SidePanel = forwardRef<
 
     reset: () => {
       setState("VIEWING");
+      setInterpretation(null);
     },
 
     revoke: () => {
       setRequestedScope("interpret_job_posting");
       setState("VIEWING");
+      setInterpretation(null);
       onConsentRevoked();
     }
   }),
@@ -145,12 +183,100 @@ export const Phase6SidePanel = forwardRef<
       <Phase6StateRouter
         state={state}
         jobTitle={jobTitle}
+        loadingArtifacts={loadingArtifacts}
+        actionButtonStyle={actionButtonStyle}
+        secondaryActionButtonStyle={secondaryActionButtonStyle}
         onAdvance={transition}
         onRequestInterpretation={() => {
           setRequestedScope("interpret_job_posting");
           transition("CONSENT_REQUESTED_INTERPRETATION");
         }}
       />
+
+      {hydrationIncomplete && (
+        <div
+          style={{
+            marginTop: "16px",
+            padding: "10px",
+            borderRadius: "8px",
+            background: "#fff7e6",
+            border: "1px solid #ffd591",
+            fontSize: "13px"
+          }}
+        >
+          ⚠ Job content may be incomplete.
+          <button
+            onClick={() => setContextExpanded(true)}
+            style={{
+              marginLeft: "6px",
+              background: "none",
+              border: "none",
+              color: "#1677ff",
+              cursor: "pointer",
+              fontWeight: 600
+            }}
+          >
+            Add missing context
+          </button>
+        </div>
+      )}
+
+      <div style={{ marginTop: "24px" }}>
+        <h4 style={{ margin: 0 }}>Improve Job Content</h4>
+        <button
+          onClick={() => setContextExpanded(!contextExpanded)}
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            fontWeight: 600,
+            cursor: "pointer",
+            color: "#444"
+          }}
+        >
+          {contextExpanded ? "▼ Add missing context" : "▶ Add missing context"}
+        </button>
+
+        {contextExpanded && (
+          <div style={{ marginTop: "12px" }}>
+            <p style={{ color: "#666", fontSize: "13px" }}>
+              Some job pages load incomplete descriptions. Paste missing sections from the job page
+              before analyzing.
+            </p>
+
+            <textarea
+              value={additionalContext}
+              onChange={(e) => setAdditionalContext(e.target.value)}
+              placeholder="Paste additional job description text..."
+              style={{
+                width: "100%",
+                minHeight: "120px",
+                padding: "10px",
+                borderRadius: "8px",
+                border: "1px solid #ddd",
+                fontFamily: "inherit",
+              }}
+            />
+
+            <button
+              onClick={handleReinterpretWithContext}
+              disabled={!additionalContext.trim() || isInterpreting}
+              style={{
+                marginTop: "10px",
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "1px solid #ddd",
+                background: "#fff",
+                fontWeight: 600,
+                cursor: additionalContext.trim() && !isInterpreting ? "pointer" : "not-allowed",
+                opacity: additionalContext.trim() && !isInterpreting ? 1 : 0.6
+              }}
+            >
+              {hasInterpretation ? "Re-run Analysis" : "Analyze Role"}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
 
     {/* ✅ Revoke button only visible after consent */}
@@ -162,14 +288,7 @@ export const Phase6SidePanel = forwardRef<
       transition("VIEWING");
       onConsentRevoked();
     }}
-    style={{
-      marginTop: "16px",
-      padding: "8px 12px",
-      borderRadius: "8px",
-      border: "1px solid #ddd",
-      background: "#fff",
-      cursor: "pointer",
-    }}
+    style={{ ...actionButtonStyle, marginTop: "16px" }}
   >
     Revoke Access
   </button>

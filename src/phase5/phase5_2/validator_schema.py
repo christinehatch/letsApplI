@@ -12,8 +12,14 @@ def validate_schema(output_json: dict) -> None:
 
     if errors:
         first_error = errors[0]
+        path = "$"
+        if first_error.path:
+            path += "".join(
+                f"[{part}]" if isinstance(part, int) else f".{part}"
+                for part in first_error.path
+            )
         raise Phase52ValidationError(
             reason_code="SCHEMA_VIOLATION",
-            violation_detail=first_error.message,
+            violation_detail=f"{path}: {first_error.message}",
             raw_excerpt=str(first_error.instance)
         )

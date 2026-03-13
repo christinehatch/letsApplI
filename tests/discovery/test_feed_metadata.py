@@ -1,5 +1,6 @@
 import sqlite3
 import tempfile
+import json
 
 from persistence.migrate import migrate
 from persistence.repos.jobs_repo import JobsRepo
@@ -49,3 +50,54 @@ def test_discovery_feed_returns_provider_and_posted_at_fields():
     assert len(jobs) == 1
     assert jobs[0]["provider"] == "greenhouse_job_board_api"
     assert jobs[0]["posted_at"] == "2026-02-20T00:00:00Z"
+
+
+def test_discovery_feed_returns_ai_relevance_explanation_from_interpretation_signals():
+    conn = _create_db_with_metadata()
+
+    conn.execute(
+        """
+        UPDATE jobs
+        SET raw_provider_payload_json = ?
+        WHERE provider_job_key = ?
+        """,
+        (
+            json.dumps({"ai_relevance_score": 0.82}),
+            "greenhouse:demo:1",
+        ),
+    )
+    conn.execute(
+        """
+        INSERT INTO job_interpretations (job_id, interpretation_json, model_version)
+        VALUES (?, ?, ?)
+        """,
+        (
+            "greenhouse:demo:1",
+            json.dumps(
+                {
+                    "CapabilityEmphasisSignals": [
+                        {"domain_label": "GenAI Product Development"},
+                        {"domain_label": "LLM Experience"},
+                    ],
+                    "ProjectOpportunitySignals": [
+                        {"capability_surface": "AI-powered customer workflows"},
+                    ],
+                }
+            ),
+            "phase52-test",
+        ),
+    )
+    conn.commit()
+
+    repo = JobsRepo(conn)
+    jobs, total_jobs = repo.list_discovery_feed_jobs(page=1, page_size=50)
+
+    assert total_jobs == 1
+    assert len(jobs) == 1
+    assert jobs[0]["ai_relevance_score"] == 0.82
+    assert jobs[0]["ai_relevance_explanation"]["level"] == "High"
+    assert jobs[0]["ai_relevance_explanation"]["signals"] == [
+        "GenAI Product Development",
+        "LLM Experience",
+        "AI-powered customer workflows",
+    ]

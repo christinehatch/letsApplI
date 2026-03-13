@@ -1,33 +1,39 @@
 import sys
 import os
 import hashlib
+import json
+import re
+import importlib.util
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from urllib.parse import urlparse
+from pathlib import Path
+
+# Ensure local project packages under ./src are importable in all environments.
+sys.path.append(os.path.join(os.getcwd(), "src"))
+
 from src.phase5.phase5_2.validator_schema import validate_schema
 
 from src.phase5.phase5_2.determinism import compute_structural_hash
-from phase5.phase5_2.interpreter import Phase52Interpreter
-from phase5.phase5_2.types import InterpretationInput
-from phase5.phase5_2.errors import (
+from src.phase5.phase5_2.interpreter import Phase52Interpreter
+from src.phase5.phase5_2.types import InterpretationInput
+from src.phase5.phase5_2.errors import (
     InterpretationNotAuthorizedError,
     InvalidInputSourceError,
+    Phase52ValidationError,
 )
-from discovery.summary import summarize_since
-from discovery.run_state import load_last_run
-
-# Adds the project root to the Python path so 'src' is discoverable
-sys.path.append(os.path.join(os.getcwd(), "src"))
+from src.discovery.summary import summarize_since
+from src.discovery.run_state import load_last_run
 
 from ui.read_job import read_job_for_ui, get_fetcher
-from phase5.phase5_1.types import ConsentPayload
+from src.phase5.phase5_1.types import ConsentPayload
 
 import time
 from playwright.async_api import async_playwright, Browser, Playwright
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, Any
 import asyncio
 _preview_inflight: dict[str, asyncio.Task] = {}
 _preview_lock = asyncio.Lock()
@@ -35,12 +41,34 @@ _context = None
 # Playwright singletons
 _playwright: Optional[Playwright] = None
 _browser: Optional[Browser] = None
+_browser_init_error: Optional[str] = None
 
 # Preview cache: url -> (timestamp, pdf_bytes)
 _preview_cache: Dict[str, Tuple[float, bytes]] = {}
 PREVIEW_TTL_SECONDS = 300  # 5 minutes
 
 app = FastAPI()
+
+
+def _load_allowed_origins() -> list[str]:
+    raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+async def _ensure_browser_context() -> None:
+    global _playwright, _browser, _context, _browser_init_error
+    if _context is not None:
+        return
+    try:
+        if _playwright is None:
+            _playwright = await async_playwright().start()
+        if _browser is None:
+            _browser = await _playwright.chromium.launch()
+        _context = await _browser.new_context()
+        _browser_init_error = None
+    except Exception as exc:
+        _browser_init_error = str(exc)
+        raise
 
 @app.on_event("startup")
 async def startup_event():
@@ -50,6 +78,7 @@ async def startup_event():
     from persistence.migrate import migrate
     from state import DB_PATH
 
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     migrate(DB_PATH)
 
     conn = get_connection(DB_PATH)
@@ -59,9 +88,11 @@ async def startup_event():
     finally:
         conn.close()
 
-    _playwright = await async_playwright().start()
-    _browser = await _playwright.chromium.launch()
-    _context = await _browser.new_context()
+    try:
+        await _ensure_browser_context()
+    except Exception as exc:
+        # Preview browser is optional for core API availability.
+        print(f"Preview browser init skipped at startup: {exc}")
 
 
 @app.on_event("shutdown")
@@ -94,7 +125,8 @@ async def shutdown_event():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_load_allowed_origins(),
+    allow_origin_regex=os.getenv("ALLOW_ORIGIN_REGEX"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -112,6 +144,14 @@ class JobStatePayload(BaseModel):
 
 
 class ReadJobPayload(BaseModel):
+    job_id: str
+
+
+class ManualInterpretPayload(BaseModel):
+    raw_content: str
+
+
+class JobIgnorePayload(BaseModel):
     job_id: str
 
 VALID_STATES = {
@@ -134,6 +174,8 @@ ALLOWED_PREVIEW_HOSTS = {
 }
 
 async def _render_pdf(url: str) -> bytes:
+    if _context is None:
+        await _ensure_browser_context()
     if _context is None:
         raise RuntimeError("Browser context not initialized")
 
@@ -169,6 +211,184 @@ def _normalize_filter(value: Optional[str]) -> Optional[str]:
     return normalized
 
 
+def _normalize_signal_filters(value: Optional[str]) -> list[str]:
+    if value is None:
+        return []
+    normalized = [part.strip().lower() for part in value.split(",")]
+    out: list[str] = []
+    for signal in normalized:
+        if not signal or signal == "all":
+            continue
+        if signal not in out:
+            out.append(signal)
+    return out
+
+
+def _normalize_role_and_experience(
+    role: Optional[str], experience: Optional[str]
+) -> tuple[Optional[str], Optional[str]]:
+    normalized_role = _normalize_filter(role)
+    normalized_experience = _normalize_filter(experience)
+    if not normalized_role:
+        return normalized_role, normalized_experience
+
+    working_role = normalized_role
+    junior_patterns = [
+        r"\bnew\s+grad\b",
+        r"\bentry\s+level\b",
+        r"\bearly\s+career\b",
+        r"\bjunior\b",
+        r"\bentry\b",
+        r"\bassociate\b",
+    ]
+
+    has_junior_intent = False
+    for pattern in junior_patterns:
+        if re.search(pattern, working_role, flags=re.IGNORECASE):
+            has_junior_intent = True
+            working_role = re.sub(pattern, " ", working_role, flags=re.IGNORECASE)
+
+    normalized_role = _normalize_filter(" ".join(working_role.split()))
+    if has_junior_intent and not normalized_experience:
+        normalized_experience = "junior"
+
+    return normalized_role, normalized_experience
+
+
+def _expand_role_synonyms(role: Optional[str]) -> Optional[str]:
+    normalized_role = _normalize_filter(role)
+    if not normalized_role:
+        return normalized_role
+
+    expanded_tokens = normalized_role.split()
+    token_set = set(expanded_tokens)
+
+    phrase_synonyms = [
+        (["ml"], ["machine", "learning"]),
+        (["machine", "learning"], ["ml"]),
+        (["ai"], ["artificial", "intelligence"]),
+        (["artificial", "intelligence"], ["ai"]),
+    ]
+
+    for source_phrase, target_phrase in phrase_synonyms:
+        source_found = all(token in token_set for token in source_phrase)
+        if not source_found:
+            continue
+        for token in target_phrase:
+            if token in token_set:
+                continue
+            expanded_tokens.append(token)
+            token_set.add(token)
+
+    return " ".join(expanded_tokens)
+
+
+def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        # Support common UTC "Z" suffix.
+        normalized = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+        return dt
+    except ValueError:
+        return None
+
+
+def _normalize_whitespace(text: str) -> str:
+    return " ".join((text or "").split()).strip().lower()
+
+
+def _is_cached_interpretation_stale(
+    span_map: Optional[dict[str, str]],
+    resolved_content: Optional[str],
+) -> bool:
+    if not span_map or not resolved_content:
+        return False
+
+    normalized_content = _normalize_whitespace(resolved_content)
+    if not normalized_content:
+        return False
+
+    checked = 0
+    matched = 0
+    for value in span_map.values():
+        if not isinstance(value, str):
+            continue
+        candidate = _normalize_whitespace(value)
+        if len(candidate) < 24:
+            continue
+        checked += 1
+        if candidate in normalized_content:
+            matched += 1
+
+    if checked == 0:
+        return False
+    return matched == 0
+
+
+def classify_discovery_jobs(jobs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """
+    Deterministically group discovery jobs for future UI consumption.
+
+    Rules:
+    - new_today_high:
+      within last 24h and has >=1 strong signal.
+    - new_today_low:
+      within last 24h and has no strong signal.
+    - skipped:
+      older than 48h OR user state is ignored/archived.
+    """
+    now = datetime.now().astimezone()
+    strong_signals = {
+        "ai",
+        "machine_learning",
+        "product",
+        "backend",
+        "frontend",
+        "platform",
+    }
+
+    grouped: dict[str, list[dict[str, Any]]] = {
+        "new_today_high": [],
+        "new_today_low": [],
+        "skipped": [],
+    }
+
+    for job in jobs:
+        first_seen_raw = job.get("first_seen_at")
+        first_seen = _parse_iso_datetime(first_seen_raw)
+        state = str(job.get("state") or "").strip().lower()
+        job_signals = {
+            str(signal).strip().lower()
+            for signal in (job.get("signals") or [])
+            if str(signal).strip()
+        }
+
+        has_strong_signal = len(job_signals.intersection(strong_signals)) > 0
+        age_hours: Optional[float] = None
+        if first_seen:
+            age_hours = (now - first_seen).total_seconds() / 3600.0
+
+        is_skipped = state in {"ignored", "archived"} or (
+            age_hours is not None and age_hours > 48.0
+        )
+        if is_skipped:
+            grouped["skipped"].append(job)
+            continue
+
+        is_new_today = age_hours is not None and age_hours <= 24.0
+        if is_new_today and has_strong_signal:
+            grouped["new_today_high"].append(job)
+            continue
+        if is_new_today:
+            grouped["new_today_low"].append(job)
+
+    return grouped
+
+
 @app.get("/api/discovery-feed")
 async def discovery_feed(
     page: int = Query(1, ge=1, description="1-based page number"),
@@ -179,7 +399,11 @@ async def discovery_feed(
         None, description="Optional experience filter: junior | mid | senior"
     ),
     company: Optional[str] = Query(None, description="Optional company substring"),
+    ai_filter: Optional[str] = Query(None, description="Optional AI filter: ai_only"),
+    signal: Optional[str] = Query(None, description="Optional title-signal bucket"),
+    signals: Optional[str] = Query(None, description="Optional comma-separated title-signal buckets"),
 ):
+    from analysis.ai_relevance import score_ai_relevance
     from persistence.db import get_connection
     from persistence.repos.jobs_repo import JobsRepo
     from state import DB_PATH
@@ -187,23 +411,156 @@ async def discovery_feed(
     conn = get_connection(DB_PATH)
     try:
         repo = JobsRepo(conn)
+        selected_signals = _normalize_signal_filters(signals)
+        normalized_signal = _normalize_filter(signal)
+        normalized_role, normalized_experience = _normalize_role_and_experience(
+            role, experience
+        )
+        expanded_role = _expand_role_synonyms(normalized_role)
+
         jobs, total_jobs = repo.list_discovery_feed_jobs(
             page=page,
             page_size=page_size,
             location=_normalize_filter(location),
-            role=_normalize_filter(role),
-            experience=_normalize_filter(experience),
+            role=expanded_role,
+            experience=normalized_experience,
             company=_normalize_filter(company),
+            ai_filter=_normalize_filter(ai_filter),
+            signal=normalized_signal,
+            signals=selected_signals or None,
         )
+
+        job_ids = [job.get("job_id") for job in jobs if job.get("job_id")]
+        interpretation_map: dict[str, dict] = {}
+        if job_ids:
+            placeholders = ",".join(["?"] * len(job_ids))
+            rows = conn.execute(
+                f"""
+                SELECT job_id, interpretation_json
+                FROM job_interpretations
+                WHERE job_id IN ({placeholders})
+                """,
+                tuple(job_ids),
+            ).fetchall()
+
+            for row in rows:
+                interpretation_json = row["interpretation_json"]
+                if not interpretation_json:
+                    continue
+                try:
+                    interpretation_map[row["job_id"]] = json.loads(interpretation_json)
+                except json.JSONDecodeError:
+                    continue
+
+        for job in jobs:
+            interpretation = interpretation_map.get(job.get("job_id", ""))
+            if interpretation:
+                ai_score = score_ai_relevance(interpretation)
+                job["ai_relevance_score"] = ai_score["ai_relevance_score"]
+                job["ai_relevance_level"] = ai_score["ai_relevance_level"]
+            else:
+                job["ai_relevance_score"] = None
+                job["ai_relevance_level"] = None
+
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total_jobs": total_jobs,
+            "jobs": jobs,
+        }
     finally:
         conn.close()
 
-    return {
-        "page": page,
-        "page_size": page_size,
-        "total_jobs": total_jobs,
-        "jobs": jobs,
-    }
+
+@app.get("/api/new-jobs-count")
+async def new_jobs_count():
+    from persistence.db import get_connection
+    from persistence.repos.jobs_repo import JobsRepo
+    from state import DB_PATH
+    from user_session import get_last_seen, update_last_seen
+
+    last_seen_at = get_last_seen()
+    new_jobs = 0
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobsRepo(conn)
+        if last_seen_at:
+            new_jobs = repo.count_jobs_since(last_seen_at)
+    finally:
+        conn.close()
+
+    update_last_seen()
+    return {"new_jobs": new_jobs}
+
+
+@app.get("/api/resume-signals")
+async def get_resume_signals():
+    module_path = Path(__file__).resolve().parent / "src" / "state" / "resume_signals.py"
+    if not module_path.exists():
+        return {"signals": []}
+
+    try:
+        spec = importlib.util.spec_from_file_location("resume_signals_module", module_path)
+        if spec is None or spec.loader is None:
+            return {"signals": []}
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        load_fn = getattr(module, "load_resume_signals", None)
+        if not callable(load_fn):
+            return {"signals": []}
+        return {"signals": load_fn()}
+    except Exception:
+        return {"signals": []}
+
+
+@app.get("/api/market-alignment")
+async def get_market_alignment():
+    from analysis.market_alignment import compute_market_alignment
+    from persistence.db import get_connection
+    from persistence.repos.jobs_repo import JobsRepo
+    from state import DB_PATH
+
+    # Load resume signals safely (same fallback semantics as /api/resume-signals).
+    module_path = Path(__file__).resolve().parent / "src" / "state" / "resume_signals.py"
+    resume_signals: list[str] = []
+    if module_path.exists():
+        try:
+            spec = importlib.util.spec_from_file_location("resume_signals_module", module_path)
+            if spec is not None and spec.loader is not None:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                load_fn = getattr(module, "load_resume_signals", None)
+                if callable(load_fn):
+                    resume_signals = load_fn()
+        except Exception:
+            resume_signals = []
+
+    if not resume_signals:
+        return {"alignment": {}}
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobsRepo(conn)
+        page = 1
+        page_size = 500
+        all_jobs: list[dict[str, Any]] = []
+
+        while True:
+            jobs, total_jobs = repo.list_discovery_feed_jobs(
+                page=page,
+                page_size=page_size,
+            )
+            all_jobs.extend(jobs)
+            if len(all_jobs) >= total_jobs or not jobs:
+                break
+            page += 1
+    finally:
+        conn.close()
+
+    alignment = compute_market_alignment(all_jobs, resume_signals)
+    return {"alignment": alignment}
+
 
 @app.get("/api/discovery-summary")
 async def discovery_summary(
@@ -251,6 +608,39 @@ async def get_hydrated_job(
     conn = get_connection(DB_PATH)
 
     try:
+        job_row = conn.execute(
+            """
+            SELECT raw_provider_payload_json
+            FROM jobs
+            WHERE provider_job_key = ?
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+
+        if job_row and job_row["raw_provider_payload_json"]:
+            try:
+                payload = json.loads(job_row["raw_provider_payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                payload = None
+
+            if isinstance(payload, dict):
+                description_text = payload.get("description_text")
+                if isinstance(description_text, str) and description_text.strip():
+                    return {
+                        "job_id": job_id,
+                        "content": description_text,
+                        "content_source": "discovery",
+                    }
+
+                description_html = payload.get("description_html")
+                if isinstance(description_html, str) and description_html.strip():
+                    return {
+                        "job_id": job_id,
+                        "content": description_html,
+                        "content_source": "discovery",
+                    }
+
         row = conn.execute(
             """
             SELECT h.raw_content
@@ -267,12 +657,14 @@ async def get_hydrated_job(
         if not row:
             return {
                 "job_id": job_id,
-                "content": None
+                "content": None,
+                "content_source": None,
             }
 
         return {
             "job_id": job_id,
-            "content": row["raw_content"]
+            "content": row["raw_content"],
+            "content_source": "hydration",
         }
 
     finally:
@@ -283,24 +675,30 @@ async def get_hydrated_job(
 async def job_interpretation(
     job_id: str = Query(..., description="Canonical job id"),
 ):
+    from analysis.ai_relevance import score_ai_relevance
     from persistence.db import get_connection
     from persistence.repos.job_interpretation_repo import JobInterpretationRepo
-    from interpretation.phase52_interpreter import Phase52Interpreter
-    from interpretation.phase52_validator import Phase52Validator
+    from phase5.phase5_2.span_indexer import build_spans
     from state import DB_PATH
 
     conn = get_connection(DB_PATH)
     try:
         repo = JobInterpretationRepo(conn)
-        interpretation = repo.get_interpretation(job_id)
+        record = repo.get_interpretation_record(job_id)
+        interpretation = record["interpretation"] if record else None
+        span_map = record["span_map"] if record else {}
 
-        if interpretation is not None:
-            return {
-                "job_id": job_id,
-                "interpretation": interpretation,
-            }
+        job_row = conn.execute(
+            """
+            SELECT raw_provider_payload_json
+            FROM jobs
+            WHERE provider_job_key = ?
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
 
-        row = conn.execute(
+        hydration_row = conn.execute(
             """
             SELECT h.raw_content
             FROM hydrations h
@@ -313,28 +711,116 @@ async def job_interpretation(
             (job_id,),
         ).fetchone()
 
-        if not row:
-            return {
+        resolved_content: str | None = None
+        if job_row and job_row["raw_provider_payload_json"]:
+            try:
+                provider_payload = json.loads(job_row["raw_provider_payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                provider_payload = None
+
+            if isinstance(provider_payload, dict):
+                description_html = provider_payload.get("description_html")
+                description_text = provider_payload.get("description_text")
+
+                if isinstance(description_html, str) and description_html.strip():
+                    resolved_content = description_html
+                elif isinstance(description_text, str) and description_text.strip():
+                    resolved_content = description_text
+
+        if resolved_content is None and hydration_row and hydration_row["raw_content"]:
+            resolved_content = hydration_row["raw_content"]
+
+        if interpretation is not None and _is_cached_interpretation_stale(
+            span_map, resolved_content
+        ):
+            repo.delete_interpretation(job_id)
+            interpretation = None
+            span_map = {}
+
+        if interpretation is not None:
+            if not span_map and resolved_content:
+                span_map = {
+                    span["span_id"]: span["text"]
+                    for span in build_spans(resolved_content)
+                }
+            ai_score = score_ai_relevance(interpretation)
+            result = {
+                "job_id": job_id,
+                "interpretation": interpretation,
+                "span_map": span_map,
+                "ai_relevance": ai_score,
+            }
+            print("===== INTERPRETATION SENT TO UI =====")
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return result
+
+        if not resolved_content:
+            result = {
                 "job_id": job_id,
                 "interpretation": None,
+                "span_map": {},
+                "ai_relevance": score_ai_relevance({}),
             }
+            print("===== INTERPRETATION SENT TO UI =====")
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return result
 
-        job_text = row["raw_content"]
+        job_text = resolved_content
 
         interpreter = Phase52Interpreter()
-        interpretation = interpreter.interpret(job_text)
+        interpretation_input = InterpretationInput(
+            job_id=job_id,
+            raw_content=job_text,
+            read_at=datetime.utcnow(),
+        )
+        interpreter.set_input(interpretation_input)
+        try:
+            interpretation = interpreter.interpret()
+        except Phase52ValidationError as e:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "validation_failed",
+                    "reason": str(e),
+                },
+            )
+        span_map = interpreter.get_last_span_map()
 
-        validator = Phase52Validator()
-        interpretation = validator.validate(interpretation)
-
-        repo.save_interpretation(job_id, interpretation, "phase52-placeholder")
+        repo.save_interpretation(
+            job_id,
+            interpretation,
+            "phase52-placeholder",
+            span_map=span_map,
+        )
     finally:
         conn.close()
 
-    return {
+    result = {
         "job_id": job_id,
         "interpretation": interpretation,
+        "span_map": span_map,
+        "ai_relevance": score_ai_relevance(interpretation),
     }
+    print("===== INTERPRETATION SENT TO UI =====")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return result
+
+@app.delete("/api/job-interpretation")
+async def clear_job_interpretation(
+    job_id: str = Query(..., description="Canonical job id"),
+):
+    from persistence.db import get_connection
+    from persistence.repos.job_interpretation_repo import JobInterpretationRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobInterpretationRepo(conn)
+        repo.delete_interpretation(job_id)
+    finally:
+        conn.close()
+
+    return {"success": True, "job_id": job_id}
 
 
 @app.post("/api/job-state")
@@ -374,6 +860,23 @@ async def clear_job_state(job_id: str = Query(..., description="Job id to clear 
 
     return {"success": True}
 
+
+@app.post("/api/job-ignore")
+async def ignore_job(payload: JobIgnorePayload):
+    from persistence.db import get_connection
+    from persistence.repos.job_user_state_repo import JobUserStateRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobUserStateRepo(conn)
+        repo.set_state(payload.job_id, "ignored")
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"status": "ignored"}
+
 @app.get("/api/user-preview")
 async def user_preview(url: str = Query(..., description="Job listing URL")):
     # --- Validate URL ---
@@ -383,6 +886,18 @@ async def user_preview(url: str = Query(..., description="Job listing URL")):
         raise HTTPException(status_code=400, detail="Invalid URL scheme.")
     if parsed.netloc not in ALLOWED_PREVIEW_HOSTS:
         raise HTTPException(status_code=400, detail=f"Host not allowed: {parsed.netloc}")
+
+    if _context is None:
+        try:
+            await _ensure_browser_context()
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Preview browser is unavailable on this instance."
+                    + (f" Last error: {_browser_init_error}" if _browser_init_error else "")
+                ),
+            )
 
     # --- Server-side cache (fast path) ---
     now = time.time()
@@ -650,17 +1165,24 @@ async def handle_interpret_job(payload: HandoffPayload):
         interpreter.set_input(interpretation_input)
 
         result = interpreter.interpret()
+        span_map = interpreter.get_last_span_map()
 
         conn = get_connection(DB_PATH)
         try:
             repo = JobInterpretationRepo(conn)
-            repo.save_interpretation(job_id, result, "phase52-placeholder")
+            repo.save_interpretation(
+                job_id,
+                result,
+                "phase52-placeholder",
+                span_map=span_map,
+            )
         finally:
             conn.close()
 
         return {
             "job_id": job_id,
-            "interpretation": result
+            "interpretation": result,
+            "span_map": span_map,
         }
 
     except InterpretationNotAuthorizedError as e:
@@ -669,9 +1191,64 @@ async def handle_interpret_job(payload: HandoffPayload):
     except InvalidInputSourceError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    except Phase52ValidationError as e:
+        from persistence.db import get_connection
+        from persistence.repos.interpretation_attempts_repo import InterpretationAttemptsRepo
+        from state import DB_PATH
+
+        conn = get_connection(DB_PATH)
+        try:
+            repo = InterpretationAttemptsRepo(conn)
+            repo.create_attempt(
+                job_id=payload.job_id,
+                raw_llm_output=e.raw_excerpt,
+                validation_error=f"{e.reason_code}: {e.violation_detail}",
+                timestamp=datetime.utcnow().isoformat() + "Z",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        raise HTTPException(status_code=400, detail=str(e))
+
     except HTTPException:
         raise
 
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/interpret-manual")
+async def handle_interpret_manual(payload: ManualInterpretPayload):
+    try:
+        raw_content = (payload.raw_content or "").strip()
+        if not raw_content:
+            raise HTTPException(status_code=400, detail="raw_content is required")
+
+        interpretation_input = InterpretationInput(
+            job_id="manual:input:adhoc",
+            raw_content=raw_content,
+            read_at=datetime.utcnow(),
+        )
+
+        interpreter = Phase52Interpreter()
+        interpreter.set_input(interpretation_input)
+        result = interpreter.interpret()
+        span_map = interpreter.get_last_span_map()
+
+        return {
+            "interpretation": result,
+            "span_map": span_map,
+        }
+
+    except InterpretationNotAuthorizedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except InvalidInputSourceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Phase52ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

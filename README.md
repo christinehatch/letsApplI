@@ -70,6 +70,37 @@ No user behavior, preferences, or actions are recorded.
    npm run dev
    ```
 
+## Deploy (Free Tiers)
+
+Recommended setup:
+- Frontend: Vercel
+- Backend API: Render
+
+### 1) Deploy backend on Render
+
+- Create a new Web Service from this repo.
+- Render can use [`render.yaml`](render.yaml) directly.
+- Required env vars:
+  - `ALLOWED_ORIGINS=https://<your-vercel-domain>`
+- Start command:
+  - `uvicorn bridge_server:app --host 0.0.0.0 --port $PORT`
+
+### 2) Deploy frontend on Vercel
+
+- Import this repo in Vercel.
+- `vercel.json` is included for Vite + SPA rewrites.
+- Set frontend env var:
+  - `VITE_API_BASE_URL=https://<your-render-domain>`
+
+### 3) Local vs hosted behavior
+
+- Local dev:
+  - `VITE_API_BASE_URL` can be empty; Vite proxy handles `/api` to `localhost:8000`.
+- Hosted:
+  - Set `VITE_API_BASE_URL` so frontend calls your hosted backend.
+
+Note: free-tier backends can cold-start after inactivity.
+
 ## Developer Support Files
 
 - `AGENTS.md`: repo-specific instructions for AI coding agents.

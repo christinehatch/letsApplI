@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { Phase6SidePanel } from "../phase6/Phase6SidePanel";
 
 export function DummyJobPage() {
+  const [additionalContext, setAdditionalContext] = useState("");
   const dummyJob = {
     id: "dummy-123",
     title: "Senior Software Engineer, Developer Productivity",
@@ -60,6 +61,12 @@ export function DummyJobPage() {
       <Phase6SidePanel
         jobId={dummyJob.id}
         jobTitle={dummyJob.title}
+        additionalContext={additionalContext}
+        setAdditionalContext={setAdditionalContext}
+        handleReinterpretWithContext={() => {}}
+        isInterpreting={false}
+        onConsentGranted={() => {}}
+        onConsentRevoked={() => {}}
       />
     </div>
   );

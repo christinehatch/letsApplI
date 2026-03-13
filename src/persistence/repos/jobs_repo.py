@@ -1,9 +1,12 @@
 # src/persistence/repos/jobs_repo.py
 
+import json
 from sqlite3 import IntegrityError
 from typing import Optional
 from persistence.models import JobRecord
 from persistence.errors import JobNotFoundError
+from scoring.ai_relevance_explainer import generate_ai_relevance_explanation
+from discovery.title_signal_extractor import extract_title_signals
 
 
 class JobsRepo:
@@ -110,13 +113,20 @@ class JobsRepo:
         role: Optional[str] = None,
         experience: Optional[str] = None,
         company: Optional[str] = None,
+        ai_filter: Optional[str] = None,
+        signal: Optional[str] = None,
+        signals: Optional[list[str]] = None,
     ) -> tuple[list[dict], int]:
         where, params = self._build_discovery_where_and_params(
             location=location,
             role=role,
             experience=experience,
             company=company,
+            ai_filter=ai_filter,
+            signal=signal,
+            signals=signals,
         )
+        ranking_expr, ranking_params = self._build_role_ranking_expression(role)
 
         page = max(1, page)
         page_size = max(1, page_size)
@@ -133,16 +143,34 @@ class JobsRepo:
         total_jobs = int(count_row[0]) if count_row else 0
 
         paged_params = list(params)
+        paged_params.extend(ranking_params)
         paged_params.extend([page_size, offset])
+        order_by = (
+            f"({ranking_expr}) DESC, jobs.discovered_at DESC"
+            if ranking_expr
+            else "jobs.discovered_at DESC"
+        )
 
         rows = self.conn.execute(
             f"""
-            SELECT jobs.provider_job_key, jobs.company, jobs.title, jobs.location_raw, jobs.url, jobs.posted_at, jobs.provider, job_user_state.state
+            SELECT
+              jobs.provider_job_key,
+              jobs.company,
+              jobs.title,
+              jobs.location_raw,
+              jobs.url,
+              jobs.posted_at,
+              jobs.provider,
+              job_user_state.state,
+              jobs.raw_provider_payload_json,
+              ji.interpretation_json
             FROM jobs
             LEFT JOIN job_user_state
               ON jobs.provider_job_key = job_user_state.job_id
+            LEFT JOIN job_interpretations ji
+              ON jobs.provider_job_key = ji.job_id
             WHERE {' AND '.join(where)}
-            ORDER BY jobs.discovered_at DESC
+            ORDER BY {order_by}
             LIMIT ?
             OFFSET ?
             """,
@@ -151,6 +179,20 @@ class JobsRepo:
 
         jobs: list[dict] = []
         for row in rows:
+            raw_provider_payload_json = row[8]
+            interpretation_json = row[9]
+
+            ai_relevance_score = self._extract_ai_relevance_score(raw_provider_payload_json)
+            interpretation = self._safe_json_loads(interpretation_json)
+            ai_relevance_explanation = generate_ai_relevance_explanation(
+                interpretation if isinstance(interpretation, dict) else {},
+                ai_relevance_score,
+            )
+            signals = self._extract_persisted_signals(
+                raw_provider_payload_json=raw_provider_payload_json,
+                title=row[2] or "",
+            )
+
             jobs.append(
                 {
                     "job_id": row[0],
@@ -161,6 +203,9 @@ class JobsRepo:
                     "posted_at": row[5],
                     "provider": row[6],
                     "state": row[7],
+                    "ai_relevance_score": ai_relevance_score,
+                    "ai_relevance_explanation": ai_relevance_explanation,
+                    "signals": signals,
                 }
             )
         return jobs, total_jobs
@@ -202,6 +247,27 @@ class JobsRepo:
         return jobs
 
     @staticmethod
+    def _build_role_ranking_expression(role: Optional[str]) -> tuple[str, list[str]]:
+        if not role or not role.strip():
+            return "", []
+
+        normalized_role = role.strip().lower()
+        tokens = [token for token in normalized_role.split() if token]
+        unique_tokens: list[str] = []
+        for token in tokens:
+            if token not in unique_tokens:
+                unique_tokens.append(token)
+
+        parts = ["CASE WHEN LOWER(jobs.title) LIKE ? THEN 10 ELSE 0 END"]
+        params: list[str] = [f"%{normalized_role}%"]
+
+        for token in unique_tokens:
+            parts.append("CASE WHEN LOWER(jobs.title) LIKE ? THEN 3 ELSE 0 END")
+            params.append(f"%{token}%")
+
+        return " + ".join(parts), params
+
+    @staticmethod
     def _experience_tokens(experience: str) -> list[str]:
         mapping = {
             "junior": ["junior", "new grad", "entry"],
@@ -210,6 +276,26 @@ class JobsRepo:
         }
         return mapping.get(experience, [])
 
+    @staticmethod
+    def _safe_json_loads(payload: Optional[str]):
+        if not payload:
+            return None
+        try:
+            return json.loads(payload)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+
+    def _extract_ai_relevance_score(self, raw_provider_payload_json: Optional[str]) -> float:
+        payload = self._safe_json_loads(raw_provider_payload_json)
+        if not isinstance(payload, dict):
+            return 0.0
+
+        score = payload.get("ai_relevance_score")
+        if isinstance(score, (int, float)):
+            return float(score)
+
+        return 0.0
+
     def _build_discovery_where_and_params(
         self,
         *,
@@ -217,6 +303,9 @@ class JobsRepo:
         role: Optional[str],
         experience: Optional[str],
         company: Optional[str],
+        ai_filter: Optional[str],
+        signal: Optional[str],
+        signals: Optional[list[str]],
     ) -> tuple[list[str], list]:
         where = ["is_archived = 0"]
         params: list = []
@@ -233,8 +322,10 @@ class JobsRepo:
             params.extend([pattern, pattern, pattern])
 
         if role:
-            params.append(f"%{role.strip().lower()}%")
-            where.append("LOWER(title) LIKE ?")
+            tokens = [t for t in role.strip().lower().split() if t]
+            for token in tokens:
+                where.append("LOWER(title) LIKE ?")
+                params.append(f"%{token}%")
 
         if company:
             params.append(f"%{company.strip().lower()}%")
@@ -253,4 +344,62 @@ class JobsRepo:
                 where.append("LOWER(title) LIKE ?")
                 params.append(f"%{exp}%")
 
+        if ai_filter and ai_filter.strip().lower() == "ai_only":
+            where.append(
+                "COALESCE("
+                "CASE "
+                "WHEN json_valid(raw_provider_payload_json) "
+                "THEN CAST(json_extract(raw_provider_payload_json, '$.ai_relevance_score') AS REAL) "
+                "ELSE 0 "
+                "END, "
+                "0"
+                ") > 0.0"
+            )
+
+        selected_signals: list[str] = []
+        if signals:
+            selected_signals.extend(
+                [s.strip().lower() for s in signals if isinstance(s, str) and s.strip()]
+            )
+        if signal and signal.strip():
+            selected_signals.append(signal.strip().lower())
+        selected_signals = list(dict.fromkeys(selected_signals))
+
+        if selected_signals:
+            placeholders = ", ".join(["?"] * len(selected_signals))
+            where.append(
+                "EXISTS ("
+                "SELECT 1 "
+                "FROM json_each("
+                "CASE WHEN json_valid(raw_provider_payload_json) "
+                "THEN raw_provider_payload_json "
+                "ELSE '{}' END, "
+                "'$.signals'"
+                ") "
+                f"WHERE LOWER(CAST(json_each.value AS TEXT)) IN ({placeholders})"
+                ")"
+            )
+            params.extend(selected_signals)
+
         return where, params
+
+    def _extract_persisted_signals(
+        self,
+        *,
+        raw_provider_payload_json: Optional[str],
+        title: str,
+    ) -> list[str]:
+        payload = self._safe_json_loads(raw_provider_payload_json)
+        if isinstance(payload, dict):
+            raw_signals = payload.get("signals")
+            if isinstance(raw_signals, list):
+                normalized = [
+                    str(signal).strip().lower()
+                    for signal in raw_signals
+                    if str(signal).strip()
+                ]
+                if normalized:
+                    return normalized
+
+        # Backward compatibility for older rows that predate stored title signals.
+        return extract_title_signals(title)

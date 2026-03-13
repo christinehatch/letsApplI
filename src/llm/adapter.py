@@ -110,8 +110,19 @@ class LLMAdapter:
             if not raw_output or not raw_output.strip():
                 raise LLMAdapterError("Empty structured response")
 
+            normalized_output = raw_output.strip()
+            if normalized_output.startswith("```"):
+                lines = normalized_output.splitlines()
+                if lines:
+                    lines = lines[1:]
+                while lines and not lines[-1].strip():
+                    lines.pop()
+                if lines and lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                normalized_output = "\n".join(lines).strip()
+
             try:
-                parsed = json.loads(raw_output)
+                parsed = json.loads(normalized_output)
             except json.JSONDecodeError:
                 raise LLMAdapterError("LLM did not return valid JSON")
 

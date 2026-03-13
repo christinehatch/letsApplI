@@ -8,6 +8,9 @@ import { ConsentAcknowledgement } from "./states/ConsentAcknowledgement";
 interface Phase6StateRouterProps {
   state: Phase6State;
   jobTitle: string;
+  loadingArtifacts: boolean;
+  actionButtonStyle: React.CSSProperties;
+  secondaryActionButtonStyle: React.CSSProperties;
   onAdvance: (next: Phase6State) => void;
   onRequestInterpretation: () => void;
 }
@@ -15,6 +18,9 @@ interface Phase6StateRouterProps {
 export function Phase6StateRouter({
                                     state,
                                     jobTitle,
+                                    loadingArtifacts,
+                                    actionButtonStyle,
+                                    secondaryActionButtonStyle,
                                     onAdvance,
                                     onRequestInterpretation,
 }: Phase6StateRouterProps) {
@@ -42,7 +48,11 @@ export function Phase6StateRouter({
         This analysis does not evaluate you or recommend actions.
       </p>
 
-      <button onClick={onRequestInterpretation}>
+      <button
+        onClick={onRequestInterpretation}
+        disabled={loadingArtifacts}
+        style={actionButtonStyle}
+      >
         Analyze Role
       </button>
     </div>
@@ -53,6 +63,8 @@ export function Phase6StateRouter({
       <ConsentRequest
         title="Analyze this role?"
         description="This will analyze the job posting and extract requirements and capability signals."
+        primaryActionButtonStyle={actionButtonStyle}
+        secondaryActionButtonStyle={secondaryActionButtonStyle}
         onConfirm={() => onAdvance("INTERPRETING")}
         onCancel={() => onAdvance("VIEWING")}
       />
