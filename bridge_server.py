@@ -27,6 +27,7 @@ from src.phase5.phase5_2.errors import (
 )
 from src.discovery.summary import summarize_since
 from src.discovery.run_state import load_last_run
+from src.llm.adapter import LLMAdapter, LLMAdapterError
 
 from ui.read_job import read_job_for_ui, get_fetcher
 from src.phase5.phase5_1.types import ConsentPayload
@@ -154,6 +155,24 @@ class ManualInterpretPayload(BaseModel):
 class JobIgnorePayload(BaseModel):
     job_id: str
 
+
+class ApplicationPreparePayload(BaseModel):
+    job_description: str
+    user_profile: dict[str, Any]
+
+
+class ApplicationAnswers(BaseModel):
+    why_this_role: str
+    relevant_experience: str
+    strengths: str
+
+
+class ApplicationPrepareResponse(BaseModel):
+    cover_letter: str
+    answers: ApplicationAnswers
+    resume_highlights: list[str]
+
+
 VALID_STATES = {
     "saved",
     "applied",
@@ -209,6 +228,43 @@ def _normalize_filter(value: Optional[str]) -> Optional[str]:
     if normalized.lower() == "all":
         return None
     return normalized
+
+
+def _mock_application_response(payload: ApplicationPreparePayload) -> ApplicationPrepareResponse:
+    role = str(payload.user_profile.get("target_role") or "the role")
+    strengths = payload.user_profile.get("strengths")
+    strengths_text = (
+        ", ".join(str(s) for s in strengths if str(s).strip())
+        if isinstance(strengths, list)
+        else "backend execution, cross-functional collaboration, and clear communication"
+    )
+
+    return ApplicationPrepareResponse(
+        cover_letter=(
+            f"I am excited to apply for {role}. I enjoy building reliable products with clear ownership, "
+            "and this role aligns with how I work: shipping practical improvements, collaborating closely "
+            "with product and engineering partners, and maintaining strong execution quality."
+        ),
+        answers=ApplicationAnswers(
+            why_this_role=(
+                "The responsibilities match my preference for high-impact delivery and measurable outcomes. "
+                "I am especially motivated by roles that blend product context with strong technical execution."
+            ),
+            relevant_experience=(
+                "I have worked on production systems with iterative delivery, scoped roadmap work, and "
+                "cross-team coordination. I focus on predictable execution and maintainable implementation."
+            ),
+            strengths=(
+                f"My strongest areas are {strengths_text}. I communicate clearly, move quickly without "
+                "sacrificing quality, and adapt well to evolving priorities."
+            ),
+        ),
+        resume_highlights=[
+            "Built and shipped production features with measurable user impact.",
+            "Partnered across engineering and product to deliver scoped milestones.",
+            "Improved reliability and maintainability of core systems.",
+        ],
+    )
 
 
 def _normalize_signal_filters(value: Optional[str]) -> list[str]:
@@ -470,6 +526,46 @@ async def discovery_feed(
         }
     finally:
         conn.close()
+
+
+@app.post("/api/agent/prepare", response_model=ApplicationPrepareResponse)
+async def prepare_application(payload: ApplicationPreparePayload):
+    if not payload.job_description.strip():
+        raise HTTPException(status_code=400, detail="job_description is required")
+
+    if not os.getenv("OPENAI_API_KEY"):
+        return _mock_application_response(payload)
+
+    system_prompt = (
+        "You prepare concise, professional application drafts.\n"
+        "Return valid JSON only with this exact shape:\n"
+        "{\n"
+        '  "cover_letter": string,\n'
+        '  "answers": {\n'
+        '    "why_this_role": string,\n'
+        '    "relevant_experience": string,\n'
+        '    "strengths": string\n'
+        "  },\n"
+        '  "resume_highlights": string[]\n'
+        "}\n"
+        "Do not include markdown fences."
+    )
+    user_prompt = (
+        f"Job description:\n{payload.job_description}\n\n"
+        f"User profile JSON:\n{json.dumps(payload.user_profile)}"
+    )
+
+    try:
+        adapter = LLMAdapter()
+        raw = adapter.generate_structured(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.2,
+            max_tokens=1200,
+        )
+        return ApplicationPrepareResponse.model_validate(raw)
+    except (LLMAdapterError, ValueError, TypeError):
+        return _mock_application_response(payload)
 
 
 @app.get("/api/new-jobs-count")

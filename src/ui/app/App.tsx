@@ -7,9 +7,22 @@ import { SavedJobsBoard } from "../feed/SavedJobsBoard";
 import { RightPanel } from "../rightpanel/RightPanel";
 import MarketJobGrid from "../components/MarketJobGrid";
 import { CenterPanelShell } from "./CenterPanelShell";
+import {
+  ApplicationReportPanel,
+  type ApplicationPreparationResult,
+} from "../rightpanel/ApplicationReportPanel";
 
 const PIPELINE_STATES = ["saved", "applied", "interview", "offer"];
 const SAVED_STATES = PIPELINE_STATES;
+
+interface ApplicationPrepareRequest {
+  job_description: string;
+  user_profile: {
+    target_role: string;
+    years_experience: number;
+    strengths: string[];
+  };
+}
 
 export function App() {
   // --- State ---
@@ -55,6 +68,11 @@ const [searchDraft, setSearchDraft] = useState("");
 const isEditingTopSearchRef = useRef(false);
 const [activeRole, setActiveRole] = useState<string | null>(null);
 const pendingAutoSelectRoleRef = useRef<string | null>(null);
+const [isPreparingApplication, setIsPreparingApplication] = useState(false);
+const [applicationData, setApplicationData] =
+  useState<ApplicationPreparationResult | null>(null);
+const [applicationMode, setApplicationMode] =
+  useState<"description" | "application">("description");
 type SkippedEntry = { job: any; index: number };
 const [skippedHistory, setSkippedHistory] = useState<SkippedEntry[]>([]);
 const skippedHistoryRef = useRef<SkippedEntry[]>([]);
@@ -367,6 +385,47 @@ const performSearch = () => {
   setView("raw");
   setInterpretationNotice(null);
   setUserPreviewUrl(null);
+  setApplicationMode("description");
+  setApplicationData(null);
+  setIsPreparingApplication(false);
+};
+
+const prepareApplication = async () => {
+  if (!selectedJob) return;
+
+  const payload: ApplicationPrepareRequest = {
+    job_description:
+      hydratedContent ??
+      `${selectedJob.title} at ${selectedJob.company}\n${selectedJob.location ?? ""}\n${selectedJob.url ?? ""}`,
+    user_profile: {
+      target_role: selectedJob.title ?? "Software Engineer",
+      years_experience: 5,
+      strengths: ["backend systems", "shipping quickly", "cross-functional communication"],
+    },
+  };
+
+  setIsPreparingApplication(true);
+  setApplicationMode("application");
+  try {
+    const response = await fetch(apiUrl("/api/agent/prepare"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null);
+      throw new Error(errorBody?.detail ?? "Failed to prepare application.");
+    }
+
+    const result: ApplicationPreparationResult = await response.json();
+    setApplicationData(result);
+  } catch (error) {
+    console.error("Failed to prepare application:", error);
+    setApplicationData(null);
+  } finally {
+    setIsPreparingApplication(false);
+  }
 };
 
  const handleUpdateJobState = async (jobId: string, newState: string) => {
@@ -1534,6 +1593,24 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                           >
                               × Skip
                           </button>
+                          <button
+                              onClick={prepareApplication}
+                              disabled={isPreparingApplication}
+                              style={{
+                                  padding: "10px 14px",
+                                  borderRadius: "8px",
+                                  border: "1px solid #ddd",
+                                  color: "#1f2937",
+                                  textDecoration: "none",
+                                  fontWeight: 600,
+                                  background: "#fff",
+                                  marginRight: "8px",
+                                  cursor: isPreparingApplication ? "not-allowed" : "pointer",
+                                  opacity: isPreparingApplication ? 0.6 : 1,
+                              }}
+                          >
+                              {isPreparingApplication ? "Generating application..." : "Prepare Application"}
+                          </button>
                           <label style={{ marginRight: "8px", color: "#555", fontSize: "14px" }}>
                               Status
                           </label>
@@ -1789,7 +1866,8 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                   height: "100vh",
                   overflowY: "auto"   // 🔥 independent scroll
               }}>
-                  <RightPanel
+                  {applicationMode === "description" ? (
+                    <RightPanel
                       ref={phase6Ref}
                       jobId={selectedJob.id}
                       jobTitle={selectedJob.title}
@@ -1801,7 +1879,13 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                       hydrationIncomplete={hydrationIncomplete}
                       onConsentGranted={handleConsentHandoff}
                       onConsentRevoked={handleConsentRevoked}
-                  />
+                    />
+                  ) : (
+                    <ApplicationReportPanel
+                      loading={isPreparingApplication}
+                      application={applicationData}
+                    />
+                  )}
               </div>
           )}
 
