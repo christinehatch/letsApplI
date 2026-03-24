@@ -573,7 +573,7 @@ async def new_jobs_count():
     from persistence.db import get_connection
     from persistence.repos.jobs_repo import JobsRepo
     from state import DB_PATH
-    from src.user_session import get_last_seen, update_last_seen
+    from src.user_session import get_last_seen
 
     last_seen_at = get_last_seen()
     new_jobs = 0
@@ -586,8 +586,20 @@ async def new_jobs_count():
     finally:
         conn.close()
 
-    update_last_seen()
     return {"new_jobs": new_jobs}
+
+
+@app.post("/api/new-jobs-count/ack")
+async def acknowledge_new_jobs_count():
+    from src.user_session import update_last_seen
+
+    last_seen_at = update_last_seen()
+    return {"ok": True, "last_seen_at": last_seen_at}
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
 
 
 @app.get("/api/resume-signals")

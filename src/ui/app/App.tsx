@@ -117,6 +117,7 @@ useEffect(() => {
       const res = await fetch(apiUrl("/api/new-jobs-count"));
       const data = await res.json();
       setNewJobsCount(typeof data?.new_jobs === "number" ? data.new_jobs : 0);
+      await fetch(apiUrl("/api/new-jobs-count/ack"), { method: "POST" });
     } catch (err) {
       console.error("Failed to load new jobs count:", err);
       setNewJobsCount(0);
