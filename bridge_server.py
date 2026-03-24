@@ -494,8 +494,7 @@ async def new_jobs_count():
     conn = get_connection(DB_PATH)
     try:
         repo = JobsRepo(conn)
-        if last_seen_at:
-            new_jobs = repo.count_jobs_since(last_seen_at)
+        new_jobs = repo.count_jobs_since(last_seen_at or "1970-01-01T00:00:00Z")
     finally:
         conn.close()
 
