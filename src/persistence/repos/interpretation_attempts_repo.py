@@ -44,7 +44,8 @@ class InterpretationAttemptsRepo:
         row = self.conn.execute(
             """
             SELECT * FROM interpretation_attempts
-            WHERE id = last_insert_rowid()
+            ORDER BY id DESC
+            LIMIT 1
             """
         ).fetchone()
 

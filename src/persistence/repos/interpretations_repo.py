@@ -56,7 +56,7 @@ class InterpretationsRepo:
 
         self.conn.execute(
             """
-            INSERT OR IGNORE INTO interpretations (
+            INSERT INTO interpretations (
                 job_id, hydration_id,
                 interpretation_hash,
                 schema_version, validator_version,
@@ -65,6 +65,7 @@ class InterpretationsRepo:
                 is_shadow, created_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(hydration_id, interpretation_hash) DO NOTHING
             """,
             (
                 job_id,

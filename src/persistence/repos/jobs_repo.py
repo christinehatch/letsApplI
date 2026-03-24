@@ -1,7 +1,6 @@
 # src/persistence/repos/jobs_repo.py
 
 import json
-from sqlite3 import IntegrityError
 from typing import Optional
 from persistence.models import JobRecord
 from persistence.errors import JobNotFoundError
@@ -13,6 +12,7 @@ class JobsRepo:
 
     def __init__(self, conn):
         self.conn = conn
+        self.backend = getattr(conn, "backend", "sqlite")
 
     def list_new_jobs_since(self, since_iso: str) -> list[JobRecord]:
         rows = self.conn.execute(
@@ -56,58 +56,41 @@ class JobsRepo:
         raw_provider_payload_json: Optional[str],
     ) -> JobRecord:
 
-        try:
-            self.conn.execute(
-                """
-                INSERT INTO jobs (
-                    provider, external_id, provider_job_key,
-                    company, title, location_raw, location_norm,
-                    url, posted_at, discovered_at,
-                    raw_provider_payload_json,
-                    first_seen_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    provider,
-                    external_id,
-                    provider_job_key,
-                    company,
-                    title,
-                    location_raw,
-                    location_norm,
-                    url,
-                    posted_at,
-                    discovered_at,
-                    raw_provider_payload_json,
-                    discovered_at,  # first_seen_at set only on insert
-                ),
+        self.conn.execute(
+            """
+            INSERT INTO jobs (
+                provider, external_id, provider_job_key,
+                company, title, location_raw, location_norm,
+                url, posted_at, discovered_at,
+                raw_provider_payload_json,
+                first_seen_at
             )
-        except IntegrityError:
-            # update metadata only
-            self.conn.execute(
-                """
-                UPDATE jobs
-                SET company = ?,
-                    title = ?,
-                    location_raw = ?,
-                    location_norm = ?,
-                    url = ?,
-                    posted_at = ?,
-                    raw_provider_payload_json = ?
-                WHERE provider_job_key = ?
-                """,
-                (
-                    company,
-                    title,
-                    location_raw,
-                    location_norm,
-                    url,
-                    posted_at,
-                    raw_provider_payload_json,
-                    provider_job_key,
-                ),
-            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(provider_job_key)
+            DO UPDATE SET
+                company = excluded.company,
+                title = excluded.title,
+                location_raw = excluded.location_raw,
+                location_norm = excluded.location_norm,
+                url = excluded.url,
+                posted_at = excluded.posted_at,
+                raw_provider_payload_json = excluded.raw_provider_payload_json
+            """,
+            (
+                provider,
+                external_id,
+                provider_job_key,
+                company,
+                title,
+                location_raw,
+                location_norm,
+                url,
+                posted_at,
+                discovered_at,
+                raw_provider_payload_json,
+                discovered_at,  # first_seen_at set only on insert
+            ),
+        )
 
         row = self.conn.execute(
             "SELECT * FROM jobs WHERE provider_job_key = ?",
@@ -367,16 +350,21 @@ class JobsRepo:
                 params.append(f"%{exp}%")
 
         if ai_filter and ai_filter.strip().lower() == "ai_only":
-            where.append(
-                "COALESCE("
-                "CASE "
-                "WHEN json_valid(raw_provider_payload_json) "
-                "THEN CAST(json_extract(raw_provider_payload_json, '$.ai_relevance_score') AS REAL) "
-                "ELSE 0 "
-                "END, "
-                "0"
-                ") > 0.0"
-            )
+            if self.backend == "postgres":
+                where.append(
+                    "COALESCE((NULLIF(raw_provider_payload_json, '')::jsonb ->> 'ai_relevance_score')::double precision, 0) > 0.0"
+                )
+            else:
+                where.append(
+                    "COALESCE("
+                    "CASE "
+                    "WHEN json_valid(raw_provider_payload_json) "
+                    "THEN CAST(json_extract(raw_provider_payload_json, '$.ai_relevance_score') AS REAL) "
+                    "ELSE 0 "
+                    "END, "
+                    "0"
+                    ") > 0.0"
+                )
 
         selected_signals: list[str] = []
         if signals:
@@ -389,18 +377,29 @@ class JobsRepo:
 
         if selected_signals:
             placeholders = ", ".join(["?"] * len(selected_signals))
-            where.append(
-                "EXISTS ("
-                "SELECT 1 "
-                "FROM json_each("
-                "CASE WHEN json_valid(raw_provider_payload_json) "
-                "THEN raw_provider_payload_json "
-                "ELSE '{}' END, "
-                "'$.signals'"
-                ") "
-                f"WHERE LOWER(CAST(json_each.value AS TEXT)) IN ({placeholders})"
-                ")"
-            )
+            if self.backend == "postgres":
+                where.append(
+                    "EXISTS ("
+                    "SELECT 1 "
+                    "FROM jsonb_array_elements_text("
+                    "COALESCE((NULLIF(raw_provider_payload_json, '')::jsonb -> 'signals'), '[]'::jsonb)"
+                    ") AS elem(value) "
+                    f"WHERE LOWER(elem.value) IN ({placeholders})"
+                    ")"
+                )
+            else:
+                where.append(
+                    "EXISTS ("
+                    "SELECT 1 "
+                    "FROM json_each("
+                    "CASE WHEN json_valid(raw_provider_payload_json) "
+                    "THEN raw_provider_payload_json "
+                    "ELSE '{}' END, "
+                    "'$.signals'"
+                    ") "
+                    f"WHERE LOWER(CAST(json_each.value AS TEXT)) IN ({placeholders})"
+                    ")"
+                )
             params.extend(selected_signals)
 
         return where, params
