@@ -574,6 +574,40 @@ async def get_market_alignment():
     return {"alignment": alignment}
 
 
+@app.get("/api/debug/discovery-status")
+async def debug_discovery_status():
+    from discovery.registry import load_registry
+    from persistence.db import get_connection
+    from state import DB_PATH
+
+    signals = load_registry()
+    available = [s for s in signals if getattr(s, "availability", "") == "available"]
+    unavailable = [s for s in signals if getattr(s, "availability", "") != "available"]
+
+    conn = get_connection(DB_PATH)
+    try:
+        row = conn.execute("SELECT COUNT(*) AS c FROM jobs").fetchone()
+        jobs_count = int(row["c"]) if row and row["c"] is not None else 0
+    finally:
+        conn.close()
+
+    return {
+        "db_path": DB_PATH,
+        "jobs_count": jobs_count,
+        "signals_total": len(signals),
+        "signals_available": len(available),
+        "signals_unavailable": len(unavailable),
+        "sample_failures": [
+            {
+                "signal_id": s.signal_id,
+                "company": s.company,
+                "notes": s.notes,
+            }
+            for s in unavailable[:10]
+        ],
+    }
+
+
 @app.get("/api/discovery-summary")
 async def discovery_summary(
     location: str = Query("bay_area", description="Location filter: bay_area | all")
