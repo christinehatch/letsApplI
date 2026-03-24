@@ -56,6 +56,11 @@ def _load_allowed_origins() -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
+def _is_postgres_url(value: str) -> bool:
+    lowered = value.strip().lower()
+    return lowered.startswith("postgres://") or lowered.startswith("postgresql://")
+
+
 async def _ensure_browser_context() -> None:
     global _playwright, _browser, _context, _browser_init_error
     if _context is not None:
@@ -79,7 +84,8 @@ async def startup_event():
     from persistence.migrate import migrate
     from state import DB_PATH
 
-    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    if not _is_postgres_url(DB_PATH):
+        Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     migrate(DB_PATH)
 
     conn = get_connection(DB_PATH)
@@ -573,7 +579,10 @@ async def new_jobs_count():
     from persistence.db import get_connection
     from persistence.repos.jobs_repo import JobsRepo
     from state import DB_PATH
-    from src.user_session import get_last_seen
+    try:
+        from user_session import get_last_seen
+    except ModuleNotFoundError:
+        from src.user_session import get_last_seen
 
     last_seen_at = get_last_seen()
     new_jobs = 0
@@ -591,7 +600,10 @@ async def new_jobs_count():
 
 @app.post("/api/new-jobs-count/ack")
 async def acknowledge_new_jobs_count():
-    from src.user_session import update_last_seen
+    try:
+        from user_session import update_last_seen
+    except ModuleNotFoundError:
+        from src.user_session import update_last_seen
 
     last_seen_at = update_last_seen()
     return {"ok": True, "last_seen_at": last_seen_at}

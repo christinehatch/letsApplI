@@ -44,13 +44,14 @@ class FitSurfaceRepo:
 
         self.conn.execute(
             """
-            INSERT OR IGNORE INTO fit_surfaces (
+            INSERT INTO fit_surfaces (
                 job_id, interpretation_id,
                 fit_surface_hash,
                 algorithm_version, algorithm_config_hash,
                 surface_json, created_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(interpretation_id, fit_surface_hash) DO NOTHING
             """,
             (
                 job_id,

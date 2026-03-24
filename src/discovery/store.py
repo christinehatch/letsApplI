@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import json
+from pathlib import Path
 
 from typing import List, Tuple
 from persistence.db import get_connection, transactional
@@ -9,6 +10,12 @@ from persistence.repos.jobs_repo import JobsRepo
 from discovery.models import DiscoveredJob
 from discovery.signals.ai_relevance import compute_ai_relevance
 from datetime import datetime, timezone
+
+
+def _is_postgres_url(value: str) -> bool:
+    lowered = value.strip().lower()
+    return lowered.startswith("postgres://") or lowered.startswith("postgresql://")
+
 
 class DiscoveryStore:
 
@@ -32,6 +39,10 @@ class DiscoveryStore:
 
         new_count = 0
         updated_count = 0
+
+        # Ensure the SQLite parent directory exists in hosted environments.
+        if not _is_postgres_url(self.db_path):
+            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
         conn = get_connection(self.db_path)
 

@@ -16,9 +16,15 @@ class JobInterpretationRepo:
 
         self.conn.execute(
             """
-            INSERT OR REPLACE INTO job_interpretations
+            INSERT INTO job_interpretations
             (job_id, interpretation_json, model_version, span_map_json)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT(job_id)
+            DO UPDATE SET
+              interpretation_json = excluded.interpretation_json,
+              model_version = excluded.model_version,
+              span_map_json = excluded.span_map_json,
+              created_at = CURRENT_TIMESTAMP
             """,
             (
                 job_id,

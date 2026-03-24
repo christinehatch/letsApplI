@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import sqlite3
 
-
-def initialize_database(conn: sqlite3.Connection) -> None:
+def initialize_database(conn) -> None:
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS job_user_state (

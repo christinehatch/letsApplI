@@ -43,11 +43,12 @@ class HydrationsRepo:
 
         self.conn.execute(
             """
-            INSERT OR IGNORE INTO hydrations (
+            INSERT INTO hydrations (
                 job_id, hydration_hash, raw_content, content_type,
                 hydrator_version, hydrator_config_hash, created_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(job_id, hydration_hash) DO NOTHING
             """,
             (
                 job_id,
