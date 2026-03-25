@@ -46,6 +46,7 @@ _browser_init_error: Optional[str] = None
 # Preview cache: url -> (timestamp, pdf_bytes)
 _preview_cache: Dict[str, Tuple[float, bytes]] = {}
 PREVIEW_TTL_SECONDS = 300  # 5 minutes
+DEFAULT_RESUME_SIGNALS = ["backend", "ai", "platform"]
 
 app = FastAPI()
 
@@ -204,6 +205,33 @@ def _prune_cache(now: float) -> None:
     expired = [k for k, (ts, _) in _preview_cache.items() if (now - ts) >= PREVIEW_TTL_SECONDS]
     for k in expired:
         _preview_cache.pop(k, None)
+
+
+def _load_resume_signals_with_fallback() -> list[str]:
+    module_path = Path(__file__).resolve().parent / "src" / "state" / "resume_signals.py"
+    if not module_path.exists():
+        return DEFAULT_RESUME_SIGNALS.copy()
+
+    try:
+        spec = importlib.util.spec_from_file_location("resume_signals_module", module_path)
+        if spec is None or spec.loader is None:
+            return DEFAULT_RESUME_SIGNALS.copy()
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        load_fn = getattr(module, "load_resume_signals", None)
+        if not callable(load_fn):
+            return DEFAULT_RESUME_SIGNALS.copy()
+        loaded = load_fn()
+        if not isinstance(loaded, list):
+            return DEFAULT_RESUME_SIGNALS.copy()
+        normalized: list[str] = []
+        for signal in loaded:
+            normalized_signal = str(signal).strip().lower()
+            if normalized_signal and normalized_signal not in normalized:
+                normalized.append(normalized_signal)
+        return normalized or DEFAULT_RESUME_SIGNALS.copy()
+    except Exception:
+        return DEFAULT_RESUME_SIGNALS.copy()
 
 
 def _normalize_filter(value: Optional[str]) -> Optional[str]:
@@ -519,22 +547,7 @@ async def healthz():
 
 @app.get("/api/resume-signals")
 async def get_resume_signals():
-    module_path = Path(__file__).resolve().parent / "src" / "state" / "resume_signals.py"
-    if not module_path.exists():
-        return {"signals": []}
-
-    try:
-        spec = importlib.util.spec_from_file_location("resume_signals_module", module_path)
-        if spec is None or spec.loader is None:
-            return {"signals": []}
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        load_fn = getattr(module, "load_resume_signals", None)
-        if not callable(load_fn):
-            return {"signals": []}
-        return {"signals": load_fn()}
-    except Exception:
-        return {"signals": []}
+    return {"signals": _load_resume_signals_with_fallback()}
 
 
 @app.get("/api/market-alignment")
@@ -544,20 +557,7 @@ async def get_market_alignment():
     from persistence.repos.jobs_repo import JobsRepo
     from state import DB_PATH
 
-    # Load resume signals safely (same fallback semantics as /api/resume-signals).
-    module_path = Path(__file__).resolve().parent / "src" / "state" / "resume_signals.py"
-    resume_signals: list[str] = []
-    if module_path.exists():
-        try:
-            spec = importlib.util.spec_from_file_location("resume_signals_module", module_path)
-            if spec is not None and spec.loader is not None:
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                load_fn = getattr(module, "load_resume_signals", None)
-                if callable(load_fn):
-                    resume_signals = load_fn()
-        except Exception:
-            resume_signals = []
+    resume_signals = _load_resume_signals_with_fallback()
 
     if not resume_signals:
         return {"alignment": {}}
