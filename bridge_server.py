@@ -48,6 +48,15 @@ _browser_init_error: Optional[str] = None
 _preview_cache: Dict[str, Tuple[float, bytes]] = {}
 PREVIEW_TTL_SECONDS = 300  # 5 minutes
 DEFAULT_RESUME_SIGNALS = ["backend", "ai", "platform"]
+BLOCKED_HYDRATION_PATTERNS = [
+    "sorry, you have been blocked",
+    "you are unable to access",
+    "performance & security by cloudflare",
+    "attention required!",
+    "checking your browser before accessing",
+    "cloudflare ray id",
+    "why have i been blocked?",
+]
 
 app = FastAPI()
 
@@ -230,6 +239,36 @@ def _load_resume_signals_with_fallback() -> list[str]:
     module_path = Path(__file__).resolve().parent / "src" / "state" / "resume_signals.py"
     if not module_path.exists():
         return DEFAULT_RESUME_SIGNALS.copy()
+
+
+def _extract_discovery_content(raw_provider_payload_json: str | None) -> str | None:
+    if not raw_provider_payload_json:
+        return None
+
+    try:
+        payload = json.loads(raw_provider_payload_json)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    description_text = payload.get("description_text")
+    if isinstance(description_text, str) and description_text.strip():
+        return description_text
+
+    description_html = payload.get("description_html")
+    if isinstance(description_html, str) and description_html.strip():
+        return description_html
+
+    return None
+
+
+def _looks_like_blocked_hydration_content(content: str | None) -> bool:
+    if not content:
+        return False
+    normalized = content.lower()
+    return any(pattern in normalized for pattern in BLOCKED_HYDRATION_PATTERNS)
 
     try:
         spec = importlib.util.spec_from_file_location("resume_signals_module", module_path)
@@ -772,27 +811,15 @@ async def get_hydrated_job(
         ).fetchone()
 
         if job_row and job_row["raw_provider_payload_json"]:
-            try:
-                payload = json.loads(job_row["raw_provider_payload_json"])
-            except (TypeError, ValueError, json.JSONDecodeError):
-                payload = None
-
-            if isinstance(payload, dict):
-                description_text = payload.get("description_text")
-                if isinstance(description_text, str) and description_text.strip():
-                    return {
-                        "job_id": job_id,
-                        "content": description_text,
-                        "content_source": "discovery",
-                    }
-
-                description_html = payload.get("description_html")
-                if isinstance(description_html, str) and description_html.strip():
-                    return {
-                        "job_id": job_id,
-                        "content": description_html,
-                        "content_source": "discovery",
-                    }
+            discovery_content = _extract_discovery_content(
+                job_row["raw_provider_payload_json"]
+            )
+            if discovery_content:
+                return {
+                    "job_id": job_id,
+                    "content": discovery_content,
+                    "content_source": "discovery",
+                }
 
         row = conn.execute(
             """
@@ -1143,7 +1170,7 @@ async def handle_hydrate_job(payload: HandoffPayload):
         # Lookup job URL from DB
         conn = get_connection(DB_PATH)
         row = conn.execute(
-            "SELECT url FROM jobs WHERE provider_job_key = ?",
+            "SELECT url, raw_provider_payload_json FROM jobs WHERE provider_job_key = ?",
             (consent.job_id,)
         ).fetchone()
         conn.close()
@@ -1151,16 +1178,25 @@ async def handle_hydrate_job(payload: HandoffPayload):
         if not row:
             raise HTTPException(status_code=404, detail="Job not found.")
 
-        job_url = row[0]
+        job_url = row["url"] if "url" in row.keys() else row[0]
+        discovery_content = _extract_discovery_content(
+            row["raw_provider_payload_json"]
+            if "raw_provider_payload_json" in row.keys()
+            else None
+        )
 
         fetcher = get_fetcher(consent.job_id, job_url)
         read_result = await read_job_for_ui(consent, fetcher)
+
+        hydrated_content = (read_result.content or "").strip()
+        if not hydrated_content or _looks_like_blocked_hydration_content(hydrated_content):
+            hydrated_content = discovery_content or ""
 
         raw_availability = read_result.source.availability
         if raw_availability not in {"available", "unavailable"}:
             print(f"[WARN] Unexpected availability value: {raw_availability}")
 
-        if raw_availability == "available":
+        if hydrated_content:
             availability = "available"
         else:
             # Covers None, "", unexpected values, and explicit "unavailable"
@@ -1168,8 +1204,9 @@ async def handle_hydrate_job(payload: HandoffPayload):
 
         return {
             "job_id": read_result.job_id,
-            "content": read_result.content,
+            "content": hydrated_content or None,
             "availability": availability,
+            "content_source": "hydration" if read_result.content else "discovery",
         }
 
     except HTTPException:
@@ -1285,7 +1322,7 @@ async def handle_interpret_job(payload: HandoffPayload):
         # Lookup job URL
         conn = get_connection(DB_PATH)
         row = conn.execute(
-            "SELECT url FROM jobs WHERE provider_job_key = ?",
+            "SELECT url, raw_provider_payload_json FROM jobs WHERE provider_job_key = ?",
             (job_id,)
         ).fetchone()
         conn.close()
@@ -1293,10 +1330,19 @@ async def handle_interpret_job(payload: HandoffPayload):
         if not row:
             raise HTTPException(status_code=404, detail="Job not found.")
 
-        job_url = row[0]
+        job_url = row["url"] if "url" in row.keys() else row[0]
+        discovery_content = _extract_discovery_content(
+            row["raw_provider_payload_json"]
+            if "raw_provider_payload_json" in row.keys()
+            else None
+        )
 
         fetcher = get_fetcher(job_id, job_url)
         read_result = await read_job_for_ui(consent, fetcher)
+
+        if not read_result.content or _looks_like_blocked_hydration_content(read_result.content):
+            if discovery_content:
+                read_result.content = discovery_content
 
         print("---- INTERPRET DEBUG ----")
         print("Content length:", len(read_result.content) if read_result.content else 0)
