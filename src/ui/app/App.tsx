@@ -854,12 +854,25 @@ const handleReinterpretWithContext = async () => {
       return;
     }
 
+    const interpretation = result?.interpretation;
+    if (!interpretation || typeof interpretation !== "object") {
+      setInterpretationResult(null);
+      setRequirements([]);
+      setSpanMap({});
+      setView("raw");
+      setInterpretationNotice(
+        "Analysis is not available yet for this role. Please try again."
+      );
+      phase6Ref.current?.reset();
+      return;
+    }
+
     const explicit =
-      result.interpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
+      interpretation?.RequirementsAnalysis?.explicit_requirements ?? [];
 
     setInterpretationNotice(null);
-    setInterpretationResult(result.interpretation ?? null);
-    interpretationCache.current[jobId] = result.interpretation ?? null;
+    setInterpretationResult(interpretation);
+    interpretationCache.current[jobId] = interpretation;
     if (result?.span_map && typeof result.span_map === "object") {
       setSpanMap(result.span_map);
       spanMapCache.current[jobId] = result.span_map;
