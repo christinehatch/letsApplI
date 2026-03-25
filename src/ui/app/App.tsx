@@ -1046,7 +1046,8 @@ function isBlockedHydrationContent(content: string | null | undefined): boolean 
 function looksIncomplete(content: string): boolean {
   if (!content) return true;
 
-  const text = content.toLowerCase();
+  const normalized = content.replace(/\s+/g, " ").trim();
+  const text = normalized.toLowerCase();
 
   const navSignals = [
     "privacy policy",
@@ -1060,15 +1061,43 @@ function looksIncomplete(content: string): boolean {
     "©"
   ];
 
-  let navHits = 0;
+  const contentSignals = [
+    "responsibilities",
+    "requirements",
+    "qualifications",
+    "about the role",
+    "what you'll do",
+    "what you will do",
+    "experience",
+    "skills",
+    "preferred",
+    "benefits",
+    "about us",
+    "about the team",
+  ];
 
-  navSignals.forEach(signal => {
-    if (text.includes(signal)) navHits++;
-  });
+  const navHits = navSignals.reduce(
+    (count, signal) => count + (text.includes(signal) ? 1 : 0),
+    0
+  );
+  const contentHits = contentSignals.reduce(
+    (count, signal) => count + (text.includes(signal) ? 1 : 0),
+    0
+  );
+  const bulletLines = (content.match(/(?:^|\n)\s*[-*•]\s+\S+/g) ?? []).length;
 
-  const shortContent = content.length < 1200;
+  if (normalized.length < 260) return true;
+  if (isBlockedHydrationContent(normalized)) return true;
 
-  return shortContent || navHits >= 3;
+  if (normalized.length >= 600 && (contentHits >= 2 || bulletLines >= 3)) {
+    return false;
+  }
+
+  if (normalized.length < 500 && contentHits < 2 && bulletLines < 2) {
+    return true;
+  }
+
+  return navHits >= 4 && contentHits === 0;
 }
 
 function formatPostedDate(postedAt?: string | null): string {
