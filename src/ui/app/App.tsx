@@ -835,7 +835,7 @@ const handleReinterpretWithContext = async () => {
       apiUrl(`/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`)
     );
 
-    const result = await res.json();
+    let result = await res.json();
     console.log("Interpretation response:", result);
 
     if (!res.ok) {
@@ -853,7 +853,33 @@ const handleReinterpretWithContext = async () => {
       return;
     }
 
-    const interpretation = result?.interpretation;
+    let interpretation = result?.interpretation;
+    if (!interpretation || typeof interpretation !== "object") {
+      const hydratedForJob =
+        (jobId === selectedJob?.id ? hydratedContent : hydrationCache.current[jobId]) ?? "";
+      const hydratedRaw = hydratedForJob.trim();
+
+      if (hydratedRaw) {
+        const manualRes = await fetch(apiUrl("/api/interpret-manual"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ raw_content: hydratedRaw }),
+        });
+        const manualResult = await manualRes.json();
+        if (!manualRes.ok || !manualResult?.interpretation) {
+          throw new Error(
+            manualResult?.detail || "Interpretation unavailable for this role."
+          );
+        }
+        result = {
+          ...result,
+          interpretation: manualResult.interpretation,
+          span_map: manualResult.span_map ?? {},
+        };
+        interpretation = manualResult.interpretation;
+      }
+    }
+
     if (!interpretation || typeof interpretation !== "object") {
       setInterpretationResult(null);
       setRequirements([]);
