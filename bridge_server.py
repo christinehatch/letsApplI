@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import importlib.util
+import urllib.request
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -11,6 +12,7 @@ from datetime import datetime
 from fastapi.responses import Response, JSONResponse
 from urllib.parse import urlparse
 from pathlib import Path
+from bs4 import BeautifulSoup
 
 # Ensure local project packages under ./src are importable in all environments.
 sys.path.append(os.path.join(os.getcwd(), "src"))
@@ -269,6 +271,85 @@ def _looks_like_blocked_hydration_content(content: str | None) -> bool:
         return False
     normalized = content.lower()
     return any(pattern in normalized for pattern in BLOCKED_HYDRATION_PATTERNS)
+
+
+def _extract_text(html_or_text: str | None) -> str:
+    if not html_or_text:
+        return ""
+    return BeautifulSoup(str(html_or_text), "html.parser").get_text(" ", strip=True)
+
+
+def _fetch_provider_fallback_content(job_id: str) -> str | None:
+    parts = job_id.split(":")
+    if len(parts) != 3:
+        return None
+
+    provider, provider_scope, external_id = parts
+    provider = provider.strip().lower()
+    provider_scope = provider_scope.strip()
+    external_id = external_id.strip()
+    if not provider or not provider_scope or not external_id:
+        return None
+
+    headers = {"User-Agent": "letsApplI/hydration-fallback"}
+
+    try:
+        if provider == "lever":
+            url = f"https://api.lever.co/v0/postings/{provider_scope}/{external_id}?mode=json"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+
+            if not isinstance(payload, dict):
+                return None
+
+            chunks: list[str] = []
+            plain = str(payload.get("descriptionPlain") or "").strip()
+            if plain:
+                chunks.append(plain)
+            html_text = _extract_text(payload.get("description"))
+            if html_text and html_text not in chunks:
+                chunks.append(html_text)
+
+            lists = payload.get("lists")
+            if isinstance(lists, list):
+                for section in lists:
+                    if not isinstance(section, dict):
+                        continue
+                    section_text = _extract_text(section.get("text"))
+                    if section_text:
+                        chunks.append(section_text)
+                    content_items = section.get("content")
+                    if isinstance(content_items, list):
+                        for item in content_items:
+                            item_text = _extract_text(item)
+                            if item_text:
+                                chunks.append(item_text)
+
+            normalized: list[str] = []
+            for chunk in chunks:
+                cleaned = chunk.strip()
+                if cleaned and cleaned not in normalized:
+                    normalized.append(cleaned)
+            return "\n\n".join(normalized) if normalized else None
+
+        if provider == "greenhouse":
+            url = (
+                "https://boards-api.greenhouse.io/v1/boards/"
+                f"{provider_scope}/jobs/{external_id}?content=true"
+            )
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+
+            if not isinstance(payload, dict):
+                return None
+            content = _extract_text(payload.get("content"))
+            return content or None
+    except Exception:
+        return None
+
+    return None
 
     try:
         spec = importlib.util.spec_from_file_location("resume_signals_module", module_path)
@@ -1190,7 +1271,11 @@ async def handle_hydrate_job(payload: HandoffPayload):
 
         hydrated_content = (read_result.content or "").strip()
         if not hydrated_content or _looks_like_blocked_hydration_content(hydrated_content):
-            hydrated_content = discovery_content or ""
+            hydrated_content = (
+                discovery_content
+                or _fetch_provider_fallback_content(consent.job_id)
+                or ""
+            )
 
         raw_availability = read_result.source.availability
         if raw_availability not in {"available", "unavailable"}:
@@ -1206,7 +1291,11 @@ async def handle_hydrate_job(payload: HandoffPayload):
             "job_id": read_result.job_id,
             "content": hydrated_content or None,
             "availability": availability,
-            "content_source": "hydration" if read_result.content else "discovery",
+            "content_source": (
+                "hydration"
+                if read_result.content and not _looks_like_blocked_hydration_content(read_result.content)
+                else "fallback"
+            ),
         }
 
     except HTTPException:
@@ -1341,8 +1430,11 @@ async def handle_interpret_job(payload: HandoffPayload):
         read_result = await read_job_for_ui(consent, fetcher)
 
         if not read_result.content or _looks_like_blocked_hydration_content(read_result.content):
-            if discovery_content:
-                read_result.content = discovery_content
+            read_result.content = (
+                discovery_content
+                or _fetch_provider_fallback_content(job_id)
+                or read_result.content
+            )
 
         print("---- INTERPRET DEBUG ----")
         print("Content length:", len(read_result.content) if read_result.content else 0)
