@@ -787,7 +787,7 @@ async def get_hydrated_job(
     try:
         job_row = conn.execute(
             """
-            SELECT raw_provider_payload_json
+            SELECT raw_provider_payload_json, url
             FROM jobs
             WHERE provider_job_key = ?
             LIMIT 1
@@ -894,6 +894,17 @@ async def job_interpretation(
 
         if resolved_content is None and hydration_row and hydration_row["raw_content"]:
             resolved_content = hydration_row["raw_content"]
+
+        if resolved_content is None and job_row and job_row["url"]:
+            consent = ConsentPayload(
+                job_id=job_id,
+                scope="hydrate",
+                granted_at=datetime.utcnow(),
+            )
+            fetcher = get_fetcher(job_id, job_row["url"])
+            read_result = await read_job_for_ui(consent, fetcher)
+            if read_result.content:
+                resolved_content = read_result.content
 
         if interpretation is not None and _is_cached_interpretation_stale(
             span_map, resolved_content
