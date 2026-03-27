@@ -483,6 +483,38 @@ def _is_cached_interpretation_stale(
     return matched == 0
 
 
+def _persist_hydration_if_present(
+    db_path: str,
+    job_db_id: int,
+    raw_content: Optional[str],
+    hydrator_version: str,
+) -> None:
+    if not raw_content or not raw_content.strip():
+        return
+
+    from persistence.db import get_connection
+    from persistence.repos.hydrations_repo import HydrationsRepo
+
+    hydration_hash = hashlib.sha256(raw_content.encode("utf-8")).hexdigest()
+    hydrator_config_hash = hashlib.sha256(hydrator_version.encode("utf-8")).hexdigest()
+
+    conn = get_connection(db_path)
+    try:
+        repo = HydrationsRepo(conn)
+        repo.create_hydration(
+            job_id=job_db_id,
+            hydration_hash=hydration_hash,
+            raw_content=raw_content,
+            content_type="text/plain",
+            hydrator_version=hydrator_version,
+            hydrator_config_hash=hydrator_config_hash,
+            created_at=datetime.utcnow().isoformat() + "Z",
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def classify_discovery_jobs(jobs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     """
     Deterministically group discovery jobs for future UI consumption.
@@ -787,7 +819,7 @@ async def get_hydrated_job(
     try:
         job_row = conn.execute(
             """
-            SELECT raw_provider_payload_json, url
+            SELECT id, raw_provider_payload_json, url
             FROM jobs
             WHERE provider_job_key = ?
             LIMIT 1
@@ -905,6 +937,12 @@ async def job_interpretation(
             read_result = await read_job_for_ui(consent, fetcher)
             if read_result.content:
                 resolved_content = read_result.content
+                _persist_hydration_if_present(
+                    DB_PATH,
+                    int(job_row["id"]),
+                    read_result.content,
+                    "phase5.1-interpret-fallback",
+                )
 
         if interpretation is not None and _is_cached_interpretation_stale(
             span_map, resolved_content
@@ -1166,15 +1204,16 @@ async def handle_hydrate_job(payload: HandoffPayload):
         # Lookup job URL from DB
         conn = get_connection(DB_PATH)
         row = conn.execute(
-            "SELECT url, raw_provider_payload_json FROM jobs WHERE provider_job_key = ?",
-            (consent.job_id,)
+            "SELECT id, url, raw_provider_payload_json FROM jobs WHERE provider_job_key = ?",
+            (consent.job_id,),
         ).fetchone()
         conn.close()
 
         if not row:
             raise HTTPException(status_code=404, detail="Job not found.")
 
-        job_url = row["url"] if "url" in row.keys() else row[0]
+        job_db_id = int(row["id"] if "id" in row.keys() else row[0])
+        job_url = row["url"] if "url" in row.keys() else row[1]
         discovery_content = _extract_discovery_content(
             row["raw_provider_payload_json"]
             if "raw_provider_payload_json" in row.keys()
@@ -1183,6 +1222,12 @@ async def handle_hydrate_job(payload: HandoffPayload):
 
         fetcher = get_fetcher(consent.job_id, job_url)
         read_result = await read_job_for_ui(consent, fetcher)
+        _persist_hydration_if_present(
+            DB_PATH,
+            job_db_id,
+            read_result.content,
+            "phase5.1-hydrate-job",
+        )
 
         hydrated_content = (read_result.content or "").strip()
         if not hydrated_content or _looks_like_blocked_hydration_content(hydrated_content):
