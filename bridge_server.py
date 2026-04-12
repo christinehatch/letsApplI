@@ -39,6 +39,8 @@ from typing import Optional, Dict, Tuple, Any
 import asyncio
 _preview_inflight: dict[str, asyncio.Task] = {}
 _preview_lock = asyncio.Lock()
+_hydration_inflight: dict[str, asyncio.Task] = {}
+_hydration_lock = asyncio.Lock()
 _context = None
 # Playwright singletons
 _playwright: Optional[Playwright] = None
@@ -515,6 +517,25 @@ def _persist_hydration_if_present(
         conn.close()
 
 
+async def _read_job_for_ui_deduped(consent: ConsentPayload, job_url: str):
+    """
+    Deduplicate concurrent hydration fetches for the same canonical job_id.
+    """
+    async with _hydration_lock:
+        task = _hydration_inflight.get(consent.job_id)
+        if task is None:
+            fetcher = get_fetcher(consent.job_id, job_url)
+            task = asyncio.create_task(read_job_for_ui(consent, fetcher))
+            _hydration_inflight[consent.job_id] = task
+
+    try:
+        return await task
+    finally:
+        async with _hydration_lock:
+            if _hydration_inflight.get(consent.job_id) is task:
+                _hydration_inflight.pop(consent.job_id, None)
+
+
 def classify_discovery_jobs(jobs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     """
     Deterministically group discovery jobs for future UI consumption.
@@ -662,11 +683,8 @@ async def discovery_feed(
 async def new_jobs_count():
     from persistence.db import get_connection
     from persistence.repos.jobs_repo import JobsRepo
-    from state import DB_PATH
-    try:
-        from user_session import get_last_seen
-    except ModuleNotFoundError:
-        from src.user_session import get_last_seen
+    from src.state import DB_PATH
+    from src.user_session import get_last_seen
 
     last_seen_at = get_last_seen()
     new_jobs = 0
@@ -683,10 +701,7 @@ async def new_jobs_count():
 
 @app.post("/api/new-jobs-count/ack")
 async def acknowledge_new_jobs_count():
-    try:
-        from user_session import update_last_seen
-    except ModuleNotFoundError:
-        from src.user_session import update_last_seen
+    from src.user_session import update_last_seen
 
     last_seen_at = update_last_seen()
     return {"ok": True, "last_seen_at": last_seen_at}
@@ -1207,9 +1222,8 @@ async def handle_hydrate_job(payload: HandoffPayload):
             "SELECT id, url, raw_provider_payload_json FROM jobs WHERE provider_job_key = ?",
             (consent.job_id,),
         ).fetchone()
-        conn.close()
-
         if not row:
+            conn.close()
             raise HTTPException(status_code=404, detail="Job not found.")
 
         job_db_id = int(row["id"] if "id" in row.keys() else row[0])
@@ -1220,8 +1234,28 @@ async def handle_hydrate_job(payload: HandoffPayload):
             else None
         )
 
-        fetcher = get_fetcher(consent.job_id, job_url)
-        read_result = await read_job_for_ui(consent, fetcher)
+        # Fast path: return latest persisted hydration if available.
+        hydrated_row = conn.execute(
+            """
+            SELECT raw_content
+            FROM hydrations
+            WHERE job_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (job_db_id,),
+        ).fetchone()
+        conn.close()
+
+        if hydrated_row and hydrated_row[0]:
+            return {
+                "job_id": consent.job_id,
+                "content": hydrated_row[0],
+                "availability": "available",
+                "content_source": "cache",
+            }
+
+        read_result = await _read_job_for_ui_deduped(consent, job_url)
         _persist_hydration_if_present(
             DB_PATH,
             job_db_id,

@@ -70,9 +70,9 @@ def test_feed_query_returns_joined_state():
 
     jobs, total = JobsRepo(conn).list_discovery_feed_jobs(page=1, page_size=50)
 
-    assert total == 1
-    assert len(jobs) == 1
-    assert jobs[0]["state"] == "ignored"
+    # Discovery feed excludes ignored jobs by design.
+    assert total == 0
+    assert len(jobs) == 0
 
 
 def test_list_saved_jobs_returns_saved_only():
