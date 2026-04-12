@@ -835,11 +835,16 @@ const handleReinterpretWithContext = async () => {
       apiUrl(`/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`)
     );
 
-    let result = await res.json();
+    let result: any = null;
+    try {
+      result = await res.json();
+    } catch {
+      result = null;
+    }
     console.log("Interpretation response:", result);
 
     if (!res.ok) {
-      throw new Error(result?.detail || "Interpretation failed");
+      throw new Error(result?.detail || `Interpretation failed (${res.status})`);
     }
     if (result?.status === "validation_failed") {
       const reason = result?.reason ? ` (${result.reason})` : "";
@@ -908,6 +913,16 @@ const handleReinterpretWithContext = async () => {
     phase6Ref.current?.completeInterpretation();
   } catch (error) {
     console.error("Interpretation failed:", error);
+    const message =
+      error instanceof Error ? error.message : "Interpretation failed.";
+    const isConfigError =
+      message.toLowerCase().includes("openai_api_key not set") ||
+      message.toLowerCase().includes("openai_api_key");
+    setInterpretationNotice(
+      isConfigError
+        ? "Analysis is unavailable: backend OpenAI key is not configured."
+        : `Analysis failed: ${message}`
+    );
     phase6Ref.current?.reset();
   } finally {
     interpretationRequestInFlight.current = null;
