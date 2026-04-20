@@ -90,11 +90,9 @@ async def startup_event():
     finally:
         conn.close()
 
-    try:
-        await _ensure_browser_context()
-    except Exception as exc:
-        # Preview browser is optional for core API availability.
-        print(f"Preview browser init skipped at startup: {exc}")
+    # Keep preview browser lazy-initialized on first /api/user-preview request.
+    # Eager Playwright startup significantly increases cold-start latency.
+    print("Preview browser initialization deferred until /api/user-preview is used.")
 
 
 @app.on_event("shutdown")
@@ -1225,27 +1223,53 @@ async def handle_interpret_job(payload: HandoffPayload):
             granted_at=datetime.utcnow()
         )
 
-        # Lookup job URL
+        # Lookup job + latest persisted hydration first (fast path).
         conn = get_connection(DB_PATH)
         row = conn.execute(
-            "SELECT url FROM jobs WHERE provider_job_key = ?",
-            (job_id,)
+            """
+            SELECT
+              j.id AS job_db_id,
+              j.url AS url,
+              h.raw_content AS raw_content
+            FROM jobs j
+            LEFT JOIN hydrations h
+              ON h.job_id = j.id
+            WHERE j.provider_job_key = ?
+            ORDER BY h.created_at DESC
+            LIMIT 1
+            """,
+            (job_id,),
         ).fetchone()
         conn.close()
 
         if not row:
             raise HTTPException(status_code=404, detail="Job not found.")
 
-        job_url = row[0]
+        job_db_id = int(row["job_db_id"] if "job_db_id" in row.keys() else row[0])
+        job_url = row["url"] if "url" in row.keys() else row[1]
+        cached_raw_content = (
+            row["raw_content"] if "raw_content" in row.keys() else (row[2] if len(row) > 2 else None)
+        )
 
-        fetcher = get_fetcher(job_id, job_url)
-        read_result = await read_job_for_ui(consent, fetcher)
+        if isinstance(cached_raw_content, str) and cached_raw_content.strip():
+            content = cached_raw_content
+            read_at = datetime.utcnow()
+        else:
+            read_result = await _read_job_for_ui_deduped(consent, job_url)
+            content = read_result.content
+            read_at = read_result.read_at
+            _persist_hydration_if_present(
+                DB_PATH,
+                job_db_id,
+                content,
+                "phase5.1-interpret-job",
+            )
 
         print("---- INTERPRET DEBUG ----")
-        print("Content length:", len(read_result.content) if read_result.content else 0)
+        print("Content length:", len(content) if content else 0)
         print("--------------------------")
 
-        if not read_result.content:
+        if not content:
             raise HTTPException(
                 status_code=400,
                 detail="Hydrated content missing"
@@ -1253,8 +1277,8 @@ async def handle_interpret_job(payload: HandoffPayload):
 
         interpretation_input = InterpretationInput(
             job_id=job_id,
-            raw_content=read_result.content,
-            read_at=read_result.read_at,
+            raw_content=content,
+            read_at=read_at,
         )
 
         interpreter = Phase52Interpreter()
