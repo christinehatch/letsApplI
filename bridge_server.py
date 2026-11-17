@@ -981,7 +981,10 @@ async def applyai_envelope(
     except EnvelopeBuildError as e:
         raise HTTPException(
             status_code=422,
-            detail=f"Can't prepare this role for applyAI ({e}). Re-running the interpretation usually fixes this.",
+            detail=(
+                f"Can't prepare this role for applyAI ({e}). "
+                "Revoking and re-running the analysis usually fixes this."
+            ),
         )
 
     return {"job_id": job_id, "envelope": envelope}
@@ -1371,6 +1374,31 @@ async def handle_interpret_job(payload: HandoffPayload):
                 detail="Hydrated content missing"
             )
 
+        # Reuse a saved interpretation when it still matches the posting.
+        # The LLM only runs when there is none, or the saved one is stale.
+        # (Revoking consent deletes the saved interpretation, which is how a
+        # user asks for a fresh run.)
+        conn = get_connection(DB_PATH)
+        try:
+            saved = JobInterpretationRepo(conn).get_interpretation_record(job_id)
+        finally:
+            conn.close()
+
+        if saved and saved["interpretation"] and not _is_cached_interpretation_stale(
+            saved["span_map"], content
+        ):
+            from phase5.phase5_2.span_indexer import build_spans
+
+            span_map = saved["span_map"] or {
+                span["span_id"]: span["text"] for span in build_spans(content)
+            }
+            return {
+                "job_id": job_id,
+                "interpretation": saved["interpretation"],
+                "span_map": span_map,
+                "reused": True,
+            }
+
         interpretation_input = InterpretationInput(
             job_id=job_id,
             raw_content=content,
@@ -1399,6 +1427,7 @@ async def handle_interpret_job(payload: HandoffPayload):
             "job_id": job_id,
             "interpretation": result,
             "span_map": span_map,
+            "reused": False,
         }
 
     except InterpretationNotAuthorizedError as e:
