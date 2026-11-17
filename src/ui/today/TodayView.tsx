@@ -108,11 +108,13 @@ export function TodayView({
   apiUrl,
   onOpenSearch,
   onOpenSaved,
+  onOpenProfile,
   onOpenInApp,
 }: {
   apiUrl: (path: string) => string;
   onOpenSearch: () => void;
   onOpenSaved: () => void;
+  onOpenProfile: () => void;
   onOpenInApp: (job: { job_id: string; company: string; title: string }) => void;
 }) {
   const [stage, setStage] = useState<Stage>("home");
@@ -258,6 +260,7 @@ export function TodayView({
         <span style={{ ...tab, ...tabActive }}>Today</span>
         <button style={tab} onClick={onOpenSearch}>Search</button>
         <button style={tab} onClick={onOpenSaved}>Saved jobs</button>
+        <button style={tab} onClick={onOpenProfile}>Profile</button>
       </nav>
 
       <div style={column}>

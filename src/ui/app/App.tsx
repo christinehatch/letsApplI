@@ -8,6 +8,7 @@ import { SearchResults } from "../feed/SearchResults";
 import { ApplyAIHandoff } from "../components/ApplyAIHandoff";
 import { JobDetail } from "../job/JobDetail";
 import { TodayView } from "../today/TodayView";
+import { ProfileView } from "../profile/ProfileView";
 import { SaveSearchControl } from "../today/SaveSearchControl";
 import { CenterPanelShell } from "./CenterPanelShell";
 
@@ -37,7 +38,7 @@ const [isInterpreting, setIsInterpreting] = useState(false);
 const [loadingArtifacts, setLoadingArtifacts] = useState(false);
 const [availableJobs, setAvailableJobs] = useState<any[]>([]);
 // Open Today by default; a link that already carries a search or a job opens Search.
-const [viewMode, setViewMode] = useState<"today" | "feed" | "saved">(() => {
+const [viewMode, setViewMode] = useState<"today" | "feed" | "saved" | "profile">(() => {
   const params = new URLSearchParams(window.location.search);
   return ["q", "location", "company", "experience", "role", "selected", "signals", "aiOnly"].some((k) => params.has(k))
     ? "feed"
@@ -1266,6 +1267,7 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
               apiUrl={apiUrl}
               onOpenSearch={() => setViewMode("feed")}
               onOpenSaved={() => setViewMode("saved")}
+              onOpenProfile={() => setViewMode("profile")}
               onOpenInApp={(job) => {
                 const next = new URLSearchParams();
                 next.set("company", job.company);
@@ -1275,6 +1277,13 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                 setSearchParams(next);
                 setViewMode("feed");
               }}
+            />
+          ) : viewMode === "profile" ? (
+            <ProfileView
+              apiUrl={apiUrl}
+              onOpenToday={() => setViewMode("today")}
+              onOpenSearch={() => setViewMode("feed")}
+              onOpenSaved={() => setViewMode("saved")}
             />
           ) : (
           <>

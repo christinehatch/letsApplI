@@ -133,6 +133,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Milestone 6: the user's profile (local only; see docs/PROFILE_PLAN.md).
+from user_profile.api import router as profile_router  # noqa: E402
+
+app.include_router(profile_router)
+
 
 class HandoffPayload(BaseModel):
     job_id: str

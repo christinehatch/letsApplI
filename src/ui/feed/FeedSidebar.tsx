@@ -24,7 +24,7 @@ type FeedSidebarProps = {
   onSaveJob: (jobId: string, currentState?: string | null) => void;
   roleCategory?: string;
   viewMode: "feed" | "saved";
-  setViewMode: (mode: "today" | "feed" | "saved") => void;
+  setViewMode: (mode: "today" | "feed" | "saved" | "profile") => void;
   filters: {
     location: string;
     role: string;
@@ -184,6 +184,19 @@ export function FeedSidebar({
             }}
           >
             Saved Jobs
+          </button>
+          <button
+            onClick={() => setViewMode("profile")}
+            style={{
+              border: "1px solid #ddd",
+              background: "#fff",
+              borderRadius: "8px",
+              padding: "8px 10px",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Profile
           </button>
         </div>
         <div style={{ fontSize: "18px", fontWeight: 700, color: "#111827", marginBottom: "8px" }}>
