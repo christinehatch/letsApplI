@@ -891,6 +891,102 @@ async def clear_job_interpretation(
     return {"success": True, "job_id": job_id}
 
 
+@app.get("/api/applyai-envelope")
+async def applyai_envelope(
+    job_id: str = Query(..., description="Canonical job id"),
+):
+    """
+    Build the applyAI handoff envelope (docs/APPLYAI_HANDOFF_CONTRACT.md §3)
+    from the stored, validated interpretation. Read-only: no LLM, no network,
+    no writes, and a stale interpretation is reported, not deleted.
+    The UI adds handoff_id when the user confirms.
+    """
+    from handoff.applyai_envelope import EnvelopeBuildError, build_applyai_envelope
+    from persistence.db import get_connection
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        record = conn.execute(
+            """
+            SELECT interpretation_json, span_map_json, created_at
+            FROM job_interpretations
+            WHERE job_id = ?
+            """,
+            (job_id,),
+        ).fetchone()
+        job_row = conn.execute(
+            """
+            SELECT company, title, url, raw_provider_payload_json
+            FROM jobs
+            WHERE provider_job_key = ?
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+        hydration_row = conn.execute(
+            """
+            SELECT h.raw_content
+            FROM hydrations h
+            JOIN jobs j ON j.id = h.job_id
+            WHERE j.provider_job_key = ?
+            ORDER BY h.created_at DESC
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not record or not record["interpretation_json"]:
+        raise HTTPException(status_code=404, detail="This job has no saved interpretation.")
+    if not job_row:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    interpretation = json.loads(record["interpretation_json"])
+    span_map = json.loads(record["span_map_json"]) if record["span_map_json"] else {}
+
+    # Staleness, using only content already stored locally (never fetched).
+    local_content: Optional[str] = None
+    if job_row["raw_provider_payload_json"]:
+        try:
+            provider_payload = json.loads(job_row["raw_provider_payload_json"])
+        except (TypeError, ValueError):
+            provider_payload = None
+        if isinstance(provider_payload, dict):
+            for key in ("description_html", "description_text"):
+                value = provider_payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    local_content = value
+                    break
+    if local_content is None and hydration_row and hydration_row["raw_content"]:
+        local_content = hydration_row["raw_content"]
+
+    if _is_cached_interpretation_stale(span_map, local_content):
+        raise HTTPException(
+            status_code=409,
+            detail="This interpretation no longer matches the posting. Re-run it before sending.",
+        )
+
+    try:
+        envelope = build_applyai_envelope(
+            job_id=job_id,
+            company=job_row["company"],
+            title=job_row["title"],
+            job_url=job_row["url"],
+            interpretation=interpretation,
+            span_map=span_map,
+            interpreted_at=record["created_at"],
+        )
+    except EnvelopeBuildError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Can't prepare this role for applyAI ({e}). Re-running the interpretation usually fixes this.",
+        )
+
+    return {"job_id": job_id, "envelope": envelope}
+
+
 @app.post("/api/job-state")
 async def set_job_state(payload: JobStatePayload):
     from persistence.db import get_connection

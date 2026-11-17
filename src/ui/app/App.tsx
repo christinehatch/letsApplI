@@ -6,6 +6,7 @@ import { isLikelyAiRole } from "../feed/JobCard";
 import { SavedJobsBoard } from "../feed/SavedJobsBoard";
 import { RightPanel } from "../rightpanel/RightPanel";
 import MarketJobGrid from "../components/MarketJobGrid";
+import { ApplyAIHandoff } from "../components/ApplyAIHandoff";
 import { CenterPanelShell } from "./CenterPanelShell";
 
 const PIPELINE_STATES = ["saved", "applied", "interview", "offer"];
@@ -1858,6 +1859,8 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                                                           <p style={{margin: 0, color: "#666"}}>No project opportunity signals provided.</p>
                                                       )}
                                                   </Card>
+
+                                                  <ApplyAIHandoff jobId={selectedJob.id} apiUrl={apiUrl} />
                                               </div>
                                           ) : (
                                               <div style={{textAlign: 'center', padding: '40px'}}>
