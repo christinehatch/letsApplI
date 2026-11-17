@@ -1,6 +1,6 @@
 # letsA(ppl)I → applyAI Role Handoff Contract
 
-**Status:** Draft (not locked)
+**Status:** Draft (not locked). applyAI side opened as Phase 6.0 on 2026-11-17.
 **Version:** handoff v1.0
 **Systems:**
 
@@ -37,9 +37,10 @@ letsA(ppl)I UI                     user's browser                      applyAI
 ──────────────                     ──────────────                      ───────
 validated interpretation  ──►  user clicks "Explore in applyAI"
                                + confirms handoff preview      ──►  POST /explore/role
-                                                                    validate envelope
-                                                                    show role context (session only)
-                                                                    Path A conversation
+                                                                    validate, park under token
+                                                                    preview → user accepts
+                                                                    role context (session only)
+                                                                    Path A walkthrough (GET /explore)
                                                                     (nothing stored unless the user
                                                                      approves a memory proposal)
 ```
@@ -53,7 +54,7 @@ Properties:
 | Transport | **Browser-mediated.** The user's browser submits the envelope to applyAI as an HTML form POST. The letsA(ppl)I backend never calls applyAI, and applyAI never calls letsA(ppl)I. |
 | Granularity | **One job per handoff.** No batch export, no "send my whole pipeline". |
 | Persistence | **None by default** on either side (see §6). |
-| Default state | **Off.** Hidden unless both sides enable it (see §8). |
+| Default state | **Not reachable** until letsA(ppl)I is given applyAI's address (see §8). |
 
 Why browser-mediated: it keeps the user physically in the loop, needs no
 server-to-server credentials, needs no CORS changes to the bridge API, and
@@ -166,9 +167,11 @@ The envelope must **never** contain:
 
 ### 5.1 Route
 
-`POST /explore/role` is a **new Phase 6 route** in `career_explorer/app.py`.
-It needs its own entry in `docs/phase5_5_route_contracts.md` (or its Phase 6
-successor) before implementation, per the Step 0 immutability lock.
+`POST /explore/role` and its follow-up routes are **Phase 6 routes** in
+`career_explorer/app.py`, contracted in applyAI `docs/phase6_route_contracts.md`
+(written 2026-11-17, before implementation, per the Step 0 immutability lock).
+The envelope is sent as a single form field named `envelope` containing the
+JSON from §3.
 
 ### 5.2 Validation (reject on any failure)
 
@@ -183,18 +186,23 @@ Rejection shows a plain error page with the reason. No partial state is kept.
 ### 5.3 Use
 
 * The envelope becomes **session-scoped role context** for a Path A
-  conversation. It is held in memory only, keyed to the `ce_owner_id` owner,
-  never written to disk, and gone on `/reset` or process restart.
-  * Today `app.py` keeps conversation state in one process-wide
-    `conversation_state` dict, not per owner. Role context must be keyed per
-    owner from the start, so one user's role cannot show up in another's session.
-* **Cookie handling.** The `ce_owner_id` cookie is not sent on a cross-site
-  form POST under the default `SameSite=Lax` policy. `/explore/role` must
-  therefore validate the envelope, park it under a single-use token with a
-  short expiry (5 minutes), and answer `303` to `GET /explore/role/<token>`.
-  The GET (a top-level navigation, so the cookie is sent) binds the role
-  context to the owner and deletes the token. An expired or reused token
-  shows "This handoff expired; send it again from letsA(ppl)I."
+  conversation. It is held in memory only, keyed to the `ce_owner_id` owner
+  (applyAI conversation state is per owner since `b37323f`), never written to
+  disk, and gone on `/reset` or process restart.
+* **Cookie handling and confirmation.** The `ce_owner_id` cookie is not sent
+  on a cross-site form POST under `SameSite=Lax`, and any website can submit a
+  form to `/explore/role`. So the flow is:
+  1. `POST /explore/role` validates the envelope, parks it under a
+     single-use token (5-minute expiry), and answers `303` to
+     `GET /explore/role/<token>`.
+  2. That GET shows a read-only preview. Viewing does not bind anything.
+  3. The user clicks "Explore this role", a same-origin
+     `POST /explore/role/<token>/accept`, which binds the role to their owner
+     and consumes the token.
+
+  An expired, unknown, or reused token shows "This handoff expired; send it
+  again from letsA(ppl)I." Exact route behavior is in applyAI
+  `docs/phase6_route_contracts.md`.
 * The page shows a persistent banner with the `framing` text and the source
   (`company`, `title`, link to `job_url`).
 * applyAI may use the role context to:
@@ -212,10 +220,11 @@ Rejection shows a plain error page with the reason. No partial state is kept.
 * The envelope itself is **never** stored as memory.
 * Role content (capabilities, requirements, project ideas) is **never** turned
   into a memory proposal, because it is not user-authored.
-* The only memory that may arise is a normal `MemoryProposal` of kind `GOAL`,
-  with text the user writes or edits (for example, "I want to explore roles
-  like Platform Engineer"), approved through the existing
-  `/memory/proposals/<id>/approve` route.
+* The only memory that may ever arise is a normal `MemoryProposal` of kind
+  `GOAL`, with text the user writes or edits (for example, "I want to explore
+  roles like Platform Engineer"), approved through the existing
+  `/memory/proposals/<id>/approve` route. **Phase 6.0 does not implement
+  this:** it writes nothing to memory or proposals.
 * applyAI may log receipt as an internal event containing only
   `handoff_id` and a server-generated `received_at`. No payload content in logs.
 
@@ -257,13 +266,18 @@ Neither system may, at any time:
 
 ## 8. Enablement
 
-Off by default on both sides.
+There are no feature flags around applied logic. applyAI's roadmap (§10)
+forbids them, so enablement works like this instead:
 
-* **letsA(ppl)I:** the control renders only when `VITE_APPLYAI_HANDOFF_URL` is
-  set to the applyAI `/explore/role` URL.
-* **applyAI:** `/explore/role` returns 404 unless Phase 6 is opened. Per
-  `phase-roadmap.md` §10, that requires Phase 5.4 memory to be implemented,
-  tested, and hardened first. This contract does not open Phase 6 by itself.
+* **applyAI:** Phase 6.0 was opened on 2026-11-17
+  (`PHASE_6_OPENING_DECLARATION.md`, after Phase 5.4 was completed).
+  `/explore/role` code is merged only when complete and tested; once merged,
+  the routes exist unconditionally. There is no "off" switch.
+* **letsA(ppl)I:** the "Explore in applyAI" control renders only when
+  `VITE_APPLYAI_HANDOFF_URL` is set to applyAI's `/explore/role` URL. This is
+  destination configuration, not a flag: without an address there is nowhere
+  to send the role. Unset by default.
+* Until both sides' code is merged, the integration does not exist for users.
 
 ---
 
@@ -283,6 +297,9 @@ Off by default on both sides.
 
 * Unknown version, unknown key, oversize payload, non-https URL: each rejected
   with no session state left behind.
+* Viewing `GET /explore/role/<token>` binds nothing; only the accept POST does,
+  exactly once, for the owner who accepts.
+* Expired, unknown, and reused tokens are rejected.
 * Accepted envelope writes nothing to `memory.json` or proposals.
 * Role content cannot be submitted as a memory proposal.
 * "Clear role context" and `/reset` remove it from the session.
