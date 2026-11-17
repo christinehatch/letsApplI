@@ -167,6 +167,7 @@ useEffect(() => {
         location: j.location,
         url: j.url,
         first_seen_at: j.first_seen_at,
+        closed_at: j.closed_at ?? null,
         posted_at: j.posted_at,
         provider: j.provider,
         state: j.state,

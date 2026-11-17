@@ -46,7 +46,7 @@ def _matching_rows(repo: JobsRepo, search: dict, *, only_new: bool) -> list:
         signal=None,
         signals=None,
     )
-    where = [f"jobs.{w}" if w == "is_archived = 0" else w for w in where]
+    where = [f"jobs.{w}" if w in ("is_archived = 0", "closed_at IS NULL") else w for w in where]
     where.append(UNDECIDED)
     if only_new:
         where.append("jobs.discovered_at > ?")
@@ -136,7 +136,7 @@ def build_today(repo: JobsRepo, searches: list[dict], *, limit: int = DEFAULT_LI
                jobs.url, jobs.discovered_at, jobs.raw_provider_payload_json
         FROM jobs
         JOIN job_user_state ON jobs.provider_job_key = job_user_state.job_id
-        WHERE jobs.is_archived = 0 AND job_user_state.state = 'later'
+        WHERE jobs.is_archived = 0 AND jobs.closed_at IS NULL AND job_user_state.state = 'later'
         ORDER BY job_user_state.updated_at
         """
     ).fetchall()

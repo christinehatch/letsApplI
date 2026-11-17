@@ -26,7 +26,8 @@ class DiscoveryStore:
             (new_count, updated_count)
 
         Deduplication is enforced by UNIQUE(provider_job_key).
-        No stale marking.
+        Every job in `incoming` is marked seen now (and reopened if it had
+        been closed). Closing jobs a board no longer lists is close_missing().
         No file persistence.
         """
 
@@ -49,7 +50,8 @@ class DiscoveryStore:
                         (provider_job_key,),
                     ).fetchone()
 
-                    provider = getattr(job, "provider", "")
+                    # The key is "<provider>:<board>:<id>"; older code left provider blank.
+                    provider = getattr(job, "provider", "") or provider_job_key.split(":", 1)[0]
                     external_id = getattr(job, "external_job_id", "")
                     location_raw = getattr(job, "location_raw", None)
                     if location_raw is None:
@@ -93,6 +95,7 @@ class DiscoveryStore:
                         posted_at=None,
                         discovered_at=discovered_at,
                         raw_provider_payload_json=json.dumps(enriched_meta) if enriched_meta else None,
+                        seen_at=now_iso,
                     )
 
                     after = conn.execute(
@@ -109,3 +112,25 @@ class DiscoveryStore:
             conn.close()
 
         return new_count, updated_count
+
+    def close_missing(self, board_prefix: str, seen_keys: List[str]) -> int:
+        """Close this board's jobs that its latest successful check didn't list."""
+        conn = get_connection(self.db_path)
+        try:
+            with transactional(conn):
+                return JobsRepo(conn).mark_board_closures(
+                    board_prefix, seen_keys, datetime.now(timezone.utc).isoformat()
+                )
+        finally:
+            conn.close()
+
+    def close_unchecked_boards(self, board_prefixes: List[str]) -> int:
+        """Close jobs from boards that are no longer in the board list."""
+        conn = get_connection(self.db_path)
+        try:
+            with transactional(conn):
+                return JobsRepo(conn).close_jobs_outside_boards(
+                    board_prefixes, datetime.now(timezone.utc).isoformat()
+                )
+        finally:
+            conn.close()

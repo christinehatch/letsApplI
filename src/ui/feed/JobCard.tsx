@@ -7,6 +7,7 @@ type Job = {
   location?: string;
   posted_at?: string | null;
   first_seen_at?: string | null;
+  closed_at?: string | null;
   provider?: string;
   state?: string | null;
   ai_relevance_score?: number | null;
@@ -281,6 +282,11 @@ export const JobCard = memo(function JobCard({
       <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
         {dateLabel}
       </div>
+      {job.closed_at && (
+        <div style={{ fontSize: "12px", color: "#b42318", marginTop: "4px", fontWeight: 500 }}>
+          No longer posted
+        </div>
+      )}
       {stateLabel && (
         <div
           style={{
@@ -335,6 +341,7 @@ export function isLikelyAiRole(title: string): boolean {
     "artificial intelligence",
   ];
 
+  // Whole words only: "ai" must not match "Campaigns", "ml" not "HTML".
   const lower = title.toLowerCase();
-  return terms.some((term) => lower.includes(term));
+  return terms.some((term) => new RegExp(`(^|[^a-z0-9])${term}($|[^a-z0-9])`).test(lower));
 }

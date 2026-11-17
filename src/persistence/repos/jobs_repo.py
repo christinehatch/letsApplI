@@ -28,6 +28,43 @@ class JobsRepo:
             deterministic=True,
         )
 
+    def mark_board_closures(self, board_prefix: str, seen_keys: list[str], checked_at: str) -> int:
+        """
+        After a successful check of one board, close its jobs that the board
+        no longer lists. board_prefix is e.g. "greenhouse:stripe:". An empty
+        result is never trusted (a board briefly returning nothing would
+        otherwise close every role), so nothing is closed then.
+        """
+        if not board_prefix or not seen_keys:
+            return 0
+        self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _seen_keys (k TEXT PRIMARY KEY)")
+        self.conn.execute("DELETE FROM _seen_keys")
+        self.conn.executemany("INSERT OR IGNORE INTO _seen_keys (k) VALUES (?)", [(k,) for k in seen_keys])
+        cur = self.conn.execute(
+            """
+            UPDATE jobs SET closed_at = ?
+            WHERE substr(provider_job_key, 1, ?) = ?
+              AND closed_at IS NULL
+              AND provider_job_key NOT IN (SELECT k FROM _seen_keys)
+            """,
+            (checked_at, len(board_prefix), board_prefix),
+        )
+        return cur.rowcount
+
+    def close_jobs_outside_boards(self, board_prefixes: list[str], checked_at: str) -> int:
+        """Close jobs from boards letsA(ppl)I no longer checks (they can't be confirmed open)."""
+        if not board_prefixes:
+            return 0
+        clauses = " OR ".join(["substr(provider_job_key, 1, ?) = ?"] * len(board_prefixes))
+        params: list = [checked_at]
+        for p in board_prefixes:
+            params.extend([len(p), p])
+        cur = self.conn.execute(
+            f"UPDATE jobs SET closed_at = ? WHERE closed_at IS NULL AND NOT ({clauses})",
+            tuple(params),
+        )
+        return cur.rowcount
+
     def list_new_jobs_since(self, since_iso: str) -> list[JobRecord]:
         rows = self.conn.execute(
             """
@@ -36,6 +73,7 @@ class JobsRepo:
             WHERE first_seen_at IS NOT NULL
               AND first_seen_at > ?
               AND is_archived = 0
+              AND closed_at IS NULL
             ORDER BY first_seen_at DESC
             """,
             (since_iso,),
@@ -49,6 +87,7 @@ class JobsRepo:
             SELECT COUNT(*)
             FROM jobs
             WHERE is_archived = 0
+              AND closed_at IS NULL
               AND discovered_at > ?
             """,
             (timestamp,),
@@ -68,6 +107,7 @@ class JobsRepo:
         posted_at: Optional[str],
         discovered_at: str,
         raw_provider_payload_json: Optional[str],
+        seen_at: Optional[str] = None,
     ) -> JobRecord:
 
         try:
@@ -78,9 +118,9 @@ class JobsRepo:
                     company, title, location_raw, location_norm,
                     url, posted_at, discovered_at,
                     raw_provider_payload_json,
-                    first_seen_at
+                    first_seen_at, last_seen_at, closed_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
                 """,
                 (
                     provider,
@@ -95,6 +135,7 @@ class JobsRepo:
                     discovered_at,
                     raw_provider_payload_json,
                     discovered_at,  # first_seen_at set only on insert
+                    discovered_at,  # last_seen_at
                 ),
             )
         except IntegrityError:
@@ -108,7 +149,9 @@ class JobsRepo:
                     location_norm = ?,
                     url = ?,
                     posted_at = ?,
-                    raw_provider_payload_json = ?
+                    raw_provider_payload_json = ?,
+                    last_seen_at = ?,
+                    closed_at = NULL
                 WHERE provider_job_key = ?
                 """,
                 (
@@ -119,6 +162,7 @@ class JobsRepo:
                     url,
                     posted_at,
                     raw_provider_payload_json,
+                    seen_at or discovered_at,
                     provider_job_key,
                 ),
             )
@@ -260,7 +304,8 @@ class JobsRepo:
               jobs.posted_at,
               jobs.provider,
               job_user_state.state,
-              jobs.discovered_at
+              jobs.discovered_at,
+              jobs.closed_at
             FROM jobs
             JOIN job_user_state
               ON jobs.provider_job_key = job_user_state.job_id
@@ -282,6 +327,7 @@ class JobsRepo:
                     "provider": row[6],
                     "state": row[7],
                     "first_seen_at": row[8],
+                    "closed_at": row[9],
                 }
             )
         return jobs
@@ -347,7 +393,7 @@ class JobsRepo:
         signal: Optional[str],
         signals: Optional[list[str]],
     ) -> tuple[list[str], list]:
-        where = ["is_archived = 0"]
+        where = ["is_archived = 0", "closed_at IS NULL"]
         params: list = []
 
         # Every term group must match; synonyms/aliases inside a group are

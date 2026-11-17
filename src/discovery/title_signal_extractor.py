@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 SIGNAL_KEYWORDS: list[tuple[str, str]] = [
     ("ai", "ai"),
     ("ai platform", "ai"),
@@ -25,15 +27,20 @@ SIGNAL_KEYWORDS: list[tuple[str, str]] = [
 ]
 
 
+def _has_word(text: str, keyword: str) -> bool:
+    # Whole words only: "ai" must not match "Campaigns", "ml" not "HTML".
+    return re.search(r"(?<![a-z0-9])" + re.escape(keyword) + r"(?![a-z0-9])", text) is not None
+
+
 def extract_title_signals(title: str) -> list[str]:
     lower = title.lower()
     signals: list[str] = []
 
     for keyword, signal in SIGNAL_KEYWORDS:
-        if keyword in lower and signal not in signals:
+        if signal not in signals and _has_word(lower, keyword):
             signals.append(signal)
 
-    if "senior" in lower:
+    if _has_word(lower, "senior"):
         signals.append("senior")
 
     return signals

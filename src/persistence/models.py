@@ -20,3 +20,5 @@ class JobRecord:
     raw_provider_payload_json: Optional[str]
     is_archived: int
     first_seen_at: Optional[str]
+    last_seen_at: Optional[str] = None
+    closed_at: Optional[str] = None

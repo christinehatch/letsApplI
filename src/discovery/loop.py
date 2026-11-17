@@ -19,6 +19,21 @@ ADAPTERS: Dict[str, object] = {
 }
 
 
+# Each adapter builds job keys as "<prefix>:<board>:<id>".
+BOARD_KEY = {
+    "greenhouse_job_board_api": ("greenhouse", "board_token"),
+    "lever_job_board_api": ("lever", "company_slug"),
+    "ashby_job_board_api": ("ashby", "board_name"),
+}
+
+
+def board_prefix(signal: Signal) -> str:
+    """Key prefix shared by every job from this signal's board, or '' if unknown."""
+    prefix, config_key = BOARD_KEY.get(signal.method, ("", ""))
+    board = (signal.config or {}).get(config_key) if config_key else None
+    return f"{prefix}:{board}:" if prefix and board else ""
+
+
 def should_poll(signal: Signal, now: float) -> bool:
     interval_s = max(1, signal.poll_interval_minutes) * 60
     return (now - signal.last_polled_at) >= interval_s
@@ -46,6 +61,8 @@ def poll_all(db_path: str) -> None:
             new_count, upd_count = store.upsert_jobs(
                 incoming=jobs,
             )
+            # Only a successful check can close roles; a failed one leaves them as they were.
+            closed_count = store.close_missing(board_prefix(s), [j.job_uid for j in jobs])
 
             s2 = Signal(
                 signal_id=s.signal_id,
@@ -54,7 +71,7 @@ def poll_all(db_path: str) -> None:
                 poll_interval_minutes=s.poll_interval_minutes,
                 last_polled_at=now,
                 availability="available",
-                notes=f"polled_ok new={new_count} updated={upd_count}",
+                notes=f"polled_ok new={new_count} updated={upd_count} closed={closed_count}",
                 config=s.config,
             )
 
@@ -74,3 +91,8 @@ def poll_all(db_path: str) -> None:
             updated.append(s2)
 
     save_registry(updated)
+
+    # Roles from boards no longer on the list can't be confirmed open.
+    prefixes = [p for p in (board_prefix(s) for s in signals) if p]
+    if prefixes:
+        store.close_unchecked_boards(prefixes)

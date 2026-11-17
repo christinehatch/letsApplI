@@ -19,6 +19,12 @@ class _FakeStore:
     def upsert_jobs(self, incoming):
         return (len(incoming), 0)
 
+    def close_missing(self, board_prefix, seen_keys):
+        return 0
+
+    def close_unchecked_boards(self, board_prefixes):
+        return 0
+
 
 def test_poll_all_respects_signal_poll_interval(monkeypatch):
     adapter = _FakeAdapter()
