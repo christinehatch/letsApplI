@@ -255,34 +255,6 @@ def _normalize_role_and_experience(
     return normalized_role, normalized_experience
 
 
-def _expand_role_synonyms(role: Optional[str]) -> Optional[str]:
-    normalized_role = _normalize_filter(role)
-    if not normalized_role:
-        return normalized_role
-
-    expanded_tokens = normalized_role.split()
-    token_set = set(expanded_tokens)
-
-    phrase_synonyms = [
-        (["ml"], ["machine", "learning"]),
-        (["machine", "learning"], ["ml"]),
-        (["ai"], ["artificial", "intelligence"]),
-        (["artificial", "intelligence"], ["ai"]),
-    ]
-
-    for source_phrase, target_phrase in phrase_synonyms:
-        source_found = all(token in token_set for token in source_phrase)
-        if not source_found:
-            continue
-        for token in target_phrase:
-            if token in token_set:
-                continue
-            expanded_tokens.append(token)
-            token_set.add(token)
-
-    return " ".join(expanded_tokens)
-
-
 def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
     if not value or not isinstance(value, str):
         return None
@@ -467,13 +439,12 @@ async def discovery_feed(
         normalized_role, normalized_experience = _normalize_role_and_experience(
             role, experience
         )
-        expanded_role = _expand_role_synonyms(normalized_role)
-
+        # Synonyms are applied inside the repo as alternatives, not extra words.
         jobs, total_jobs = repo.list_discovery_feed_jobs(
             page=page,
             page_size=page_size,
             location=_normalize_filter(location),
-            role=expanded_role,
+            role=normalized_role,
             experience=normalized_experience,
             company=_normalize_filter(company),
             ai_filter=_normalize_filter(ai_filter),

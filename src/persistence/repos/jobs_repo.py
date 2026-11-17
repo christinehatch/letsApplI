@@ -7,12 +7,14 @@ from persistence.models import JobRecord
 from persistence.errors import JobNotFoundError
 from scoring.ai_relevance_explainer import generate_ai_relevance_explanation
 from discovery.title_signal_extractor import extract_title_signals
+from discovery.search_query import location_patterns, register_regexp, role_term_patterns
 
 
 class JobsRepo:
 
     def __init__(self, conn):
         self.conn = conn
+        register_regexp(conn)
 
     def list_new_jobs_since(self, since_iso: str) -> list[JobRecord]:
         rows = self.conn.execute(
@@ -270,22 +272,22 @@ class JobsRepo:
 
     @staticmethod
     def _build_role_ranking_expression(role: Optional[str]) -> tuple[str, list[str]]:
-        if not role or not role.strip():
+        """
+        Relevance for a keyword search: the whole phrase in the title ranks
+        highest, then each term matched in the title, then in the company.
+        """
+        patterns = role_term_patterns(role)
+        if not patterns:
             return "", []
 
-        normalized_role = role.strip().lower()
-        tokens = [token for token in normalized_role.split() if token]
-        unique_tokens: list[str] = []
-        for token in tokens:
-            if token not in unique_tokens:
-                unique_tokens.append(token)
-
         parts = ["CASE WHEN LOWER(jobs.title) LIKE ? THEN 10 ELSE 0 END"]
-        params: list[str] = [f"%{normalized_role}%"]
+        params: list[str] = [f"%{role.strip().lower()}%"]
 
-        for token in unique_tokens:
-            parts.append("CASE WHEN LOWER(jobs.title) LIKE ? THEN 3 ELSE 0 END")
-            params.append(f"%{token}%")
+        for pattern in patterns:
+            parts.append("CASE WHEN jobs.title REGEXP ? THEN 3 ELSE 0 END")
+            params.append(pattern)
+            parts.append("CASE WHEN jobs.company REGEXP ? THEN 1 ELSE 0 END")
+            params.append(pattern)
 
         return " + ".join(parts), params
 
@@ -332,22 +334,21 @@ class JobsRepo:
         where = ["is_archived = 0"]
         params: list = []
 
-        if location:
-            pattern = f"%{location.strip().lower()}%"
+        # Every term group must match; synonyms/aliases inside a group are
+        # alternatives (see discovery/search_query.py).
+        for pattern in location_patterns(location):
             where.append(
                 "("
-                "LOWER(COALESCE(location_raw, '')) LIKE ? "
-                "OR LOWER(COALESCE(location_norm, '')) LIKE ? "
-                "OR LOWER(REPLACE(COALESCE(location_norm, ''), '_', ' ')) LIKE ?"
+                "COALESCE(location_raw, '') REGEXP ? "
+                "OR REPLACE(COALESCE(location_norm, ''), '_', ' ') REGEXP ?"
                 ")"
             )
-            params.extend([pattern, pattern, pattern])
+            params.extend([pattern, pattern])
 
-        if role:
-            tokens = [t for t in role.strip().lower().split() if t]
-            for token in tokens:
-                where.append("LOWER(title) LIKE ?")
-                params.append(f"%{token}%")
+        # Keyword search covers job titles and company names.
+        for pattern in role_term_patterns(role):
+            where.append("(title REGEXP ? OR company REGEXP ?)")
+            params.extend([pattern, pattern])
 
         if company:
             params.append(f"%{company.strip().lower()}%")
