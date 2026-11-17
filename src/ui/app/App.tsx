@@ -677,7 +677,7 @@ useEffect(() => {
   }
 };
 
- const handleHydration = async (payload: any) => {
+ const handleHydration = async (payload: any): Promise<string | null> => {
   setIsReading(true);
   try {
     const response = await fetch(
@@ -689,13 +689,19 @@ useEffect(() => {
       }
     );
 
-    const result = await response.json();
+    let result: any = null;
+    try {
+      result = await response.json();
+    } catch {
+      result = null;
+    }
 
 
     if (result.detail || result.error) {
       setHydratedContent(null);
       setHydrationIncomplete(false);
       setHydrationUiState("HYDRATION_BLOCKED");
+      return null;
     } else if (result.content && !isBlockedHydrationContent(result.content)) {
         setHydratedContent(result.content);
         setHydrationIncomplete(looksIncomplete(result.content));
@@ -705,16 +711,19 @@ useEffect(() => {
         setHydrationUiState("READY");
         setView("raw");
         console.log("Phase 5.1 Hydration complete.");
+        return result.content;
     } else {
       setHydratedContent(null);
       setHydrationIncomplete(false);
       setHydrationUiState("HYDRATION_BLOCKED");
+      return null;
     }
   } catch (error) {
     console.error("Hydration failed:", error);
     setHydratedContent(null);
     setHydrationIncomplete(false);
     setHydrationUiState("HYDRATION_BLOCKED");
+    return null;
   } finally {
     setIsReading(false);
   }
@@ -831,15 +840,46 @@ const handleReinterpretWithContext = async () => {
   setIsInterpreting(true);
 
   try {
-    const res = await fetch(
-      apiUrl(`/api/job-interpretation?job_id=${encodeURIComponent(jobId)}`)
-    );
+    let hydratedRaw =
+      ((jobId === selectedJob?.id ? hydratedContent : hydrationCache.current[jobId]) ?? "")
+        .trim();
+
+    if (!hydratedRaw) {
+      const hydratePayload = {
+        job_id: jobId,
+        consent: {
+          granted: true,
+          scope: "hydrate",
+          granted_at: new Date().toISOString(),
+        },
+      };
+      const hydrated = await handleHydration(hydratePayload);
+      hydratedRaw = (hydrated ?? "").trim();
+    }
+
+    if (!hydratedRaw) {
+      throw new Error("Hydration failed: no readable job content.");
+    }
+
+    const res = await fetch(apiUrl("/api/interpret-job"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_id: jobId,
+        consent: {
+          granted: true,
+          scope: "interpret_job_posting",
+          granted_at: new Date().toISOString(),
+        },
+      }),
+    });
 
     let result: any = null;
     try {
       result = await res.json();
     } catch {
-      result = null;
+      const rawText = await res.text().catch(() => "");
+      result = rawText ? { detail: rawText } : null;
     }
     console.log("Interpretation response:", result);
 
@@ -858,32 +898,7 @@ const handleReinterpretWithContext = async () => {
       return;
     }
 
-    let interpretation = result?.interpretation;
-    if (!interpretation || typeof interpretation !== "object") {
-      const hydratedForJob =
-        (jobId === selectedJob?.id ? hydratedContent : hydrationCache.current[jobId]) ?? "";
-      const hydratedRaw = hydratedForJob.trim();
-
-      if (hydratedRaw) {
-        const manualRes = await fetch(apiUrl("/api/interpret-manual"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ raw_content: hydratedRaw }),
-        });
-        const manualResult = await manualRes.json();
-        if (!manualRes.ok || !manualResult?.interpretation) {
-          throw new Error(
-            manualResult?.detail || "Interpretation unavailable for this role."
-          );
-        }
-        result = {
-          ...result,
-          interpretation: manualResult.interpretation,
-          span_map: manualResult.span_map ?? {},
-        };
-        interpretation = manualResult.interpretation;
-      }
-    }
+    const interpretation = result?.interpretation;
 
     if (!interpretation || typeof interpretation !== "object") {
       setInterpretationResult(null);

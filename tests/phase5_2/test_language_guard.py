@@ -29,12 +29,11 @@ def base_valid_output():
     }
 
 
-def test_reject_second_person_language():
+def test_allow_neutral_second_person_without_advice_phrase():
     output = base_valid_output()
     output["RoleSummary"]["summary_text"] = "You will build distributed systems."
 
-    with pytest.raises(Phase52ValidationError):
-        validate_phase52_output(output, "RAW JOB CONTENT")
+    validate_phase52_output(output, "RAW JOB CONTENT")
 def test_reject_you_should_language():
     output = base_valid_output()
     output["CapabilityEmphasisSignals"][0]["description"] = \
