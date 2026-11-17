@@ -32,6 +32,7 @@ from ui.read_job import read_job_for_ui, get_fetcher
 from src.phase5.phase5_1.types import ConsentPayload
 
 import time
+import sqlite3
 from playwright.async_api import async_playwright, Browser, Playwright
 from typing import Optional, Dict, Tuple, Any
 import asyncio
@@ -959,6 +960,156 @@ async def applyai_envelope(
         )
 
     return {"job_id": job_id, "envelope": envelope}
+
+
+# ============================================================
+# Saved searches and Today
+# ============================================================
+# Deterministic, user-driven: the user defines the searches, every role
+# leaves Today only by an explicit decision, and discovery runs only when
+# the user presses "Check for new roles".
+
+class SavedSearchPayload(BaseModel):
+    role: Optional[str] = None
+    location: Optional[str] = None
+    company: Optional[str] = None
+    name: Optional[str] = None
+    include_existing: bool = False
+
+
+class TodayDecisionPayload(BaseModel):
+    job_ids: list[str]
+    decision: str
+
+
+TODAY_DECISIONS = {"saved", "ignored", "later"}
+_discovery_refresh_lock = asyncio.Lock()
+
+
+@app.get("/api/saved-searches")
+async def list_saved_searches():
+    from discovery.today import summarize_search
+    from persistence.db import get_connection
+    from persistence.repos.jobs_repo import JobsRepo
+    from persistence.repos.saved_searches_repo import SavedSearchesRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobsRepo(conn)
+        searches = SavedSearchesRepo(conn).list()
+        return {"searches": [summarize_search(repo, s) for s in searches]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/saved-searches")
+async def create_saved_search(payload: SavedSearchPayload):
+    from discovery.today import summarize_search
+    from persistence.db import get_connection
+    from persistence.repos.jobs_repo import JobsRepo
+    from persistence.repos.saved_searches_repo import SavedSearchesRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        try:
+            search = SavedSearchesRepo(conn).create(
+                role=payload.role,
+                location=payload.location,
+                company=payload.company,
+                name=payload.name,
+                include_existing=payload.include_existing,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"search": summarize_search(JobsRepo(conn), search)}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/saved-searches/{search_id}")
+async def delete_saved_search(search_id: int):
+    from persistence.db import get_connection
+    from persistence.repos.saved_searches_repo import SavedSearchesRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        if not SavedSearchesRepo(conn).delete(search_id):
+            raise HTTPException(status_code=404, detail="Saved search not found.")
+        return {"deleted": search_id}
+    finally:
+        conn.close()
+
+
+@app.get("/api/today")
+async def today(limit: int = Query(15, ge=1, le=50)):
+    from discovery.today import build_today
+    from persistence.db import get_connection
+    from persistence.repos.jobs_repo import JobsRepo
+    from persistence.repos.saved_searches_repo import SavedSearchesRepo
+    from state import DB_PATH
+
+    conn = get_connection(DB_PATH)
+    try:
+        searches = SavedSearchesRepo(conn).list()
+        return build_today(JobsRepo(conn), searches, limit=limit)
+    finally:
+        conn.close()
+
+
+@app.post("/api/today/decide")
+async def today_decide(payload: TodayDecisionPayload):
+    from persistence.db import get_connection
+    from persistence.repos.job_user_state_repo import JobUserStateRepo
+    from state import DB_PATH
+
+    decision = (payload.decision or "").strip().lower()
+    if decision not in TODAY_DECISIONS:
+        raise HTTPException(status_code=400, detail="Decision must be saved, ignored, or later.")
+    job_ids = [j for j in dict.fromkeys(payload.job_ids) if isinstance(j, str) and j.strip()]
+    if not job_ids:
+        raise HTTPException(status_code=400, detail="No jobs given.")
+
+    conn = get_connection(DB_PATH)
+    try:
+        repo = JobUserStateRepo(conn)
+        for job_id in job_ids:
+            repo.set_state(job_id, decision)
+        conn.commit()
+        return {"decision": decision, "job_ids": job_ids}
+    finally:
+        conn.close()
+
+
+@app.post("/api/discovery/refresh")
+async def discovery_refresh():
+    """User-initiated: poll the company job boards once and report what's new."""
+    from discovery.loop import poll_all
+    from state import DB_PATH
+
+    if _discovery_refresh_lock.locked():
+        raise HTTPException(status_code=409, detail="Already checking for new roles.")
+
+    async with _discovery_refresh_lock:
+        def count_jobs() -> int:
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                return conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+            finally:
+                conn.close()
+
+        before = count_jobs()
+        started = time.time()
+        await asyncio.to_thread(poll_all, DB_PATH)
+        after = count_jobs()
+
+    return {
+        "new_roles": max(0, after - before),
+        "elapsed_seconds": round(time.time() - started, 1),
+        "checked_at": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 @app.post("/api/job-state")

@@ -24,7 +24,7 @@ type FeedSidebarProps = {
   onSaveJob: (jobId: string, currentState?: string | null) => void;
   roleCategory?: string;
   viewMode: "feed" | "saved";
-  setViewMode: (mode: "feed" | "saved") => void;
+  setViewMode: (mode: "today" | "feed" | "saved") => void;
   filters: {
     location: string;
     role: string;
@@ -47,6 +47,7 @@ type FeedSidebarProps = {
   initialScrollTop: number;
   scrollRestoreKey: number;
   onScrollPositionChange: (scrollTop: number) => void;
+  saveSearchSlot?: React.ReactNode;
 };
 
 export function FeedSidebar({
@@ -65,6 +66,7 @@ export function FeedSidebar({
   initialScrollTop,
   scrollRestoreKey,
   onScrollPositionChange,
+  saveSearchSlot,
 }: FeedSidebarProps) {
   const [sidebarSearch, setSidebarSearch] = React.useState("");
   const [showKeyboardHint, setShowKeyboardHint] = React.useState(true);
@@ -80,10 +82,10 @@ export function FeedSidebar({
   const roleTitle =
     roleCategory && roleCategory.trim().length > 0
       ? `${formatRoleLabel(roleCategory)} Roles`
-      : "Daily Feed";
-  const title = isFeedLanding ? "Daily Feed" : isFeedSelected ? roleTitle : "Application Inbox";
+      : "Search";
+  const title = isFeedLanding ? "Search" : isFeedSelected ? roleTitle : "Application Inbox";
   const subtitle = isFeedLanding
-    ? "Discover and triage new roles"
+    ? "Search every role letsA(ppl)I has found"
     : isFeedSelected
       ? "Review jobs in this role track"
       : "Jump between tracked roles";
@@ -132,6 +134,19 @@ export function FeedSidebar({
       <div style={{ padding: "16px", borderBottom: "1px solid #eee" }}>
         <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
           <button
+            onClick={() => setViewMode("today")}
+            style={{
+              border: "1px solid #ddd",
+              background: "#fff",
+              borderRadius: "8px",
+              padding: "8px 10px",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Today
+          </button>
+          <button
             onClick={() => setViewMode("feed")}
             style={{
               border: "1px solid #ddd",
@@ -142,7 +157,7 @@ export function FeedSidebar({
               fontWeight: 600,
             }}
           >
-            Daily Feed
+            Search
           </button>
           <button
             onClick={() => setViewMode("saved")}
@@ -252,6 +267,7 @@ export function FeedSidebar({
             viewMode={viewMode}
             setViewMode={setViewMode}
             showChrome={false}
+            footer={saveSearchSlot}
           />
         </>
       )}

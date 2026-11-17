@@ -5,6 +5,7 @@ from typing import Optional
 
 VALID_STATES = {
     "saved",
+    "later",
     "applied",
     "interview",
     "offer",

@@ -24,6 +24,7 @@ type FeedFiltersProps = {
   viewMode: "feed" | "saved";
   setViewMode: (mode: "feed" | "saved") => void;
   showChrome?: boolean;
+  footer?: React.ReactNode;
 };
 
 export function FeedFilters({
@@ -32,6 +33,7 @@ export function FeedFilters({
   viewMode,
   setViewMode,
   showChrome = true,
+  footer,
 }: FeedFiltersProps) {
   const activeFilterChips: Array<{ key: string; label: string; onRemove: () => void }> = [];
   if (filters.location.trim()) {
@@ -102,7 +104,7 @@ export function FeedFilters({
                 fontWeight: 600,
               }}
             >
-              Daily Feed
+              Search
             </button>
             <button
               onClick={() => setViewMode("saved")}
@@ -119,7 +121,7 @@ export function FeedFilters({
             </button>
           </div>
           <h2 style={{ fontSize: "18px", marginBottom: "16px" }}>
-            {viewMode === "feed" ? "Daily Feed" : "Saved Jobs"}
+            {viewMode === "feed" ? "Search" : "Saved Jobs"}
           </h2>
         </>
       )}
@@ -200,6 +202,7 @@ export function FeedFilters({
               ))}
             </div>
           )}
+          {footer}
         </div>
       )}
     </div>

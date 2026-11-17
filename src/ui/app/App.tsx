@@ -7,6 +7,8 @@ import { SavedJobsBoard } from "../feed/SavedJobsBoard";
 import { RightPanel } from "../rightpanel/RightPanel";
 import MarketJobGrid from "../components/MarketJobGrid";
 import { ApplyAIHandoff } from "../components/ApplyAIHandoff";
+import { TodayView } from "../today/TodayView";
+import { SaveSearchControl } from "../today/SaveSearchControl";
 import { CenterPanelShell } from "./CenterPanelShell";
 
 const PIPELINE_STATES = ["saved", "applied", "interview", "offer"];
@@ -34,7 +36,13 @@ const [additionalContext, setAdditionalContext] = useState("");
 const [isInterpreting, setIsInterpreting] = useState(false);
 const [loadingArtifacts, setLoadingArtifacts] = useState(false);
 const [availableJobs, setAvailableJobs] = useState<any[]>([]);
-const [viewMode, setViewMode] = useState<"feed" | "saved">("feed");
+// Open Today by default; a link that already carries a search or a job opens Search.
+const [viewMode, setViewMode] = useState<"today" | "feed" | "saved">(() => {
+  const params = new URLSearchParams(window.location.search);
+  return ["q", "location", "company", "experience", "role", "selected", "signals", "aiOnly"].some((k) => params.has(k))
+    ? "feed"
+    : "today";
+});
 const pageSize = 50;
 const [totalJobs, setTotalJobs] = useState(0);
 const phase6Ref = useRef<Phase6SidePanelHandle | null>(null);
@@ -497,6 +505,7 @@ const handleUndoSkip = async () => {
 
 useEffect(() => {
   const onKeyDown = (event: KeyboardEvent) => {
+    if (viewMode === "today") return; // Today has its own S/K/O/L keys
     if (!selectedJob) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
 
@@ -1256,7 +1265,24 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
           overflow: "hidden",   // 🔥 prevents whole-page scroll
           fontFamily: "system-ui, sans-serif"
       }}>
-          {/* 1. Daily Feed (Left Sidebar) */}
+          {viewMode === "today" ? (
+            <TodayView
+              apiUrl={apiUrl}
+              onOpenSearch={() => setViewMode("feed")}
+              onOpenSaved={() => setViewMode("saved")}
+              onOpenInApp={(job) => {
+                const next = new URLSearchParams();
+                next.set("company", job.company);
+                next.set("q", job.title);
+                next.set("page", "1");
+                next.set("selected", job.job_id);
+                setSearchParams(next);
+                setViewMode("feed");
+              }}
+            />
+          ) : (
+          <>
+          {/* 1. Search (Left Sidebar) */}
           <FeedSidebar
               jobs={displayedJobs}
               selectedJob={selectedJob}
@@ -1287,6 +1313,15 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
               initialScrollTop={jobListScrollTop}
               scrollRestoreKey={scrollRestoreKey}
               onScrollPositionChange={setJobListScrollTop}
+              saveSearchSlot={
+                <SaveSearchControl
+                  apiUrl={apiUrl}
+                  role={filters.role}
+                  location={filters.location}
+                  company={filters.company}
+                  onOpenToday={() => setViewMode("today")}
+                />
+              }
           />
 
           {/* 2. Main Content Area (Center) */}
@@ -1315,11 +1350,11 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                   </CenterPanelShell>
               ) : !selectedJob ? (
                   <CenterPanelShell
-                    title={roleCategory ? `${formatRoleLabel(roleCategory)} Roles` : "Daily Feed"}
+                    title={roleCategory ? `${formatRoleLabel(roleCategory)} Roles` : "Search"}
                     subtitle={
                       roleCategory
                         ? "Explore currently active jobs in this role track."
-                        : "Search and explore roles matching your strengths."
+                        : "Search every role letsA(ppl)I has found."
                     }
                     context={
                       !roleCategory && newJobsCount !== null && newJobsCount > 0 ? (
@@ -1400,7 +1435,7 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                         </div>
                       </form>
                       <p style={{ color: "#666", marginBottom: "20px" }}>
-                        or explore roles matching your strengths
+                        or browse by area
                       </p>
                       {!marketAlignmentLoaded ? (
                         <div style={{ fontSize: "13px", color: "#777" }}>
@@ -1907,6 +1942,8 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                       onConsentRevoked={handleConsentRevoked}
                   />
               </div>
+          )}
+          </>
           )}
 
       </div>

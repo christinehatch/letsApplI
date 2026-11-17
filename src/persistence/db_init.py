@@ -12,6 +12,7 @@ def initialize_database(conn: sqlite3.Connection) -> None:
                 state IN (
                     'discovered',
                     'saved',
+                    'later',
                     'applied',
                     'interview',
                     'offer',
