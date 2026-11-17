@@ -10,6 +10,11 @@ from discovery.title_signal_extractor import extract_title_signals
 from discovery.search_query import location_patterns, register_regexp, role_term_patterns
 
 
+# Newest first: the company's posted date when the board gives one, else
+# when letsA(ppl)I first saw the role. All are UTC ISO text, so they sort.
+FRESHNESS_SQL = "COALESCE(jobs.posted_at, jobs.first_seen_at, jobs.discovered_at)"
+
+
 class JobsRepo:
 
     def __init__(self, conn):
@@ -222,9 +227,9 @@ class JobsRepo:
         paged_params.extend(ranking_params)
         paged_params.extend([page_size, offset])
         order_by = (
-            f"({ranking_expr}) DESC, jobs.discovered_at DESC"
+            f"({ranking_expr}) DESC, {FRESHNESS_SQL} DESC"
             if ranking_expr
-            else "jobs.discovered_at DESC"
+            else f"{FRESHNESS_SQL} DESC"
         )
 
         rows = self.conn.execute(

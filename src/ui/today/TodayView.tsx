@@ -29,6 +29,7 @@ type TodayItem = {
   locations: string[];
   url: string;
   first_seen_at: string | null;
+  posted_at?: string | null;
   signals: string[];
   source: { type: "search" | "later"; name: string; search_id?: number };
 };
@@ -347,7 +348,9 @@ export function TodayView({
 
             <div style={card}>
               <div style={meta}>
-                {[current.company, current.locations.join(" · "), current.first_seen_at && `first seen ${relativeTime(current.first_seen_at)}`]
+                {[current.company, current.locations.join(" · "), current.posted_at
+                  ? `posted ${relativeTime(current.posted_at)}`
+                  : current.first_seen_at && `first seen ${relativeTime(current.first_seen_at)}`]
                   .filter(Boolean)
                   .join(" · ")}
               </div>

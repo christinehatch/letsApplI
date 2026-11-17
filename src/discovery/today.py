@@ -19,7 +19,7 @@ import json
 from collections import Counter, OrderedDict
 from typing import Iterable, Optional
 
-from persistence.repos.jobs_repo import JobsRepo
+from persistence.repos.jobs_repo import FRESHNESS_SQL, JobsRepo
 
 UNDECIDED = "(job_user_state.state IS NULL OR job_user_state.state = 'discovered')"
 DEFAULT_LIMIT = 15
@@ -55,11 +55,11 @@ def _matching_rows(repo: JobsRepo, search: dict, *, only_new: bool) -> list:
     return repo.conn.execute(
         f"""
         SELECT jobs.provider_job_key, jobs.company, jobs.title, jobs.location_raw,
-               jobs.url, jobs.discovered_at, jobs.raw_provider_payload_json
+               jobs.url, jobs.discovered_at, jobs.raw_provider_payload_json, jobs.posted_at
         FROM jobs
         LEFT JOIN job_user_state ON jobs.provider_job_key = job_user_state.job_id
         WHERE {' AND '.join(where)}
-        ORDER BY jobs.discovered_at DESC, jobs.provider_job_key
+        ORDER BY {FRESHNESS_SQL} DESC, jobs.provider_job_key
         """,
         tuple(params),
     ).fetchall()
@@ -79,6 +79,7 @@ def _group(repo: JobsRepo, rows: Iterable, source: dict) -> "OrderedDict[tuple, 
                 "locations": [],
                 "url": r[4],
                 "first_seen_at": r[5],
+                "posted_at": r[7],
                 "signals": _signals(repo, r[6], r[2]),
                 "source": source,
             }
@@ -87,6 +88,9 @@ def _group(repo: JobsRepo, rows: Iterable, source: dict) -> "OrderedDict[tuple, 
             item["locations"].append(r[3])
         if r[5] and (not item["first_seen_at"] or r[5] < item["first_seen_at"]):
             item["first_seen_at"] = r[5]
+        # Same role in several cities: show the most recent posting date.
+        if r[7] and (not item["posted_at"] or r[7] > item["posted_at"]):
+            item["posted_at"] = r[7]
     return groups
 
 
@@ -133,7 +137,7 @@ def build_today(repo: JobsRepo, searches: list[dict], *, limit: int = DEFAULT_LI
     later_rows = repo.conn.execute(
         """
         SELECT jobs.provider_job_key, jobs.company, jobs.title, jobs.location_raw,
-               jobs.url, jobs.discovered_at, jobs.raw_provider_payload_json
+               jobs.url, jobs.discovered_at, jobs.raw_provider_payload_json, jobs.posted_at
         FROM jobs
         JOIN job_user_state ON jobs.provider_job_key = job_user_state.job_id
         WHERE jobs.is_archived = 0 AND jobs.closed_at IS NULL AND job_user_state.state = 'later'

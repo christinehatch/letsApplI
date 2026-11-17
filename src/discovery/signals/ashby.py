@@ -5,7 +5,7 @@ import json
 import urllib.request
 from typing import Any, Dict, List
 
-from discovery.models import Signal, DiscoveredJob, assert_metadata_only
+from discovery.models import Signal, DiscoveredJob, assert_metadata_only, to_utc_iso
 from discovery.signals.base import SignalAdapter
 
 
@@ -80,6 +80,7 @@ class AshbyAdapter(SignalAdapter):
                     last_seen_at=0.0,   # set in store
                     status="active",
                     raw_meta=raw_meta,
+                    posted_at=to_utc_iso(j.get("publishedAt")),
                 )
             )
         return out

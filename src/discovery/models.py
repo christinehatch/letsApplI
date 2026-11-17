@@ -42,6 +42,29 @@ class Signal:
         return asdict(self)
 
 
+def to_utc_iso(value: Any) -> Optional[str]:
+    """
+    Normalize a board's date (ISO string with any offset, or epoch
+    milliseconds) to UTC ISO-8601, so dates sort correctly as text.
+    Returns None for anything unreadable.
+    """
+    from datetime import datetime, timezone
+
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        if isinstance(value, (int, float)):
+            dt = datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+        else:
+            text = str(value).strip().replace("Z", "+00:00")
+            dt = datetime.fromisoformat(text)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
 @dataclass
 class DiscoveredJob:
     job_uid: str                 # deterministic unique key per job
@@ -55,6 +78,7 @@ class DiscoveredJob:
     last_seen_at: float
     status: str = "active"       # active | stale
     raw_meta: Dict[str, Any] = field(default_factory=dict)
+    posted_at: Optional[str] = None  # when the company published it (UTC ISO), if the board says
 
     def __post_init__(self) -> None:
         assert_metadata_only(self.raw_meta)

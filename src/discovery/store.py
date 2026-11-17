@@ -92,7 +92,7 @@ class DiscoveryStore:
                         location_raw=location_raw,
                         location_norm=None,
                         url=job.url,
-                        posted_at=None,
+                        posted_at=getattr(job, "posted_at", None),
                         discovered_at=discovered_at,
                         raw_provider_payload_json=json.dumps(enriched_meta) if enriched_meta else None,
                         seen_at=now_iso,

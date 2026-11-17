@@ -5,7 +5,7 @@ import json
 import urllib.request
 from typing import Any, Dict, List
 
-from discovery.models import Signal, DiscoveredJob, assert_metadata_only
+from discovery.models import Signal, DiscoveredJob, assert_metadata_only, to_utc_iso
 from discovery.signals.base import SignalAdapter
 
 
@@ -35,6 +35,7 @@ class GreenhouseAdapter(SignalAdapter):
                 "departments": [d.get("name") for d in (j.get("departments") or []) if d.get("name")],
                 "updated_at": j.get("updated_at"),
                 "created_at": j.get("created_at"),
+                "first_published": j.get("first_published"),
             }
             # Defensive strip if API ever includes content-ish keys
             for k in list(raw_meta.keys()):
@@ -58,6 +59,7 @@ class GreenhouseAdapter(SignalAdapter):
                     last_seen_at=0.0,   # set in store
                     status="active",
                     raw_meta=raw_meta,
+                    posted_at=to_utc_iso(j.get("first_published")),
                 )
             )
 
