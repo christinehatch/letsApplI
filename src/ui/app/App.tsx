@@ -73,11 +73,14 @@ const aiOnlyFilter = searchParams.get("aiOnly") === "1";
 const page = Math.max(1, Number(searchParams.get("page") || "1"));
 const selectedJobId = (searchParams.get("selected") ?? "").trim();
 
+// The sidebar boxes show exactly what the user typed (untrimmed), so spaces
+// survive while typing ("San " → "San Francisco"). Everything that searches
+// uses the trimmed values above, or trims these before querying.
 const filters = {
-  location: locationFilter,
-  role: searchQuery,
-  experience: experienceFilter,
-  company: companyFilter,
+  location: searchParams.get("location") ?? "",
+  role: searchParams.get("q") ?? "",
+  experience: searchParams.get("experience") ?? "",
+  company: searchParams.get("company") ?? "",
   signals: signalsFilter,
   aiOnly: aiOnlyFilter,
 };

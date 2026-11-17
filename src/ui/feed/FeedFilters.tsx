@@ -37,28 +37,28 @@ export function FeedFilters({
   if (filters.location.trim()) {
     activeFilterChips.push({
       key: `location:${filters.location}`,
-      label: `Location: ${filters.location}`,
+      label: `Location: ${filters.location.trim()}`,
       onRemove: () => setFilters.setLocationFilter(""),
     });
   }
   if (filters.role.trim()) {
     activeFilterChips.push({
       key: `role:${filters.role}`,
-      label: `Role: ${filters.role}`,
+      label: `Role: ${filters.role.trim()}`,
       onRemove: () => setFilters.setRoleFilter(""),
     });
   }
   if (filters.experience.trim()) {
     activeFilterChips.push({
       key: `experience:${filters.experience}`,
-      label: `Experience: ${filters.experience}`,
+      label: `Experience: ${filters.experience.trim()}`,
       onRemove: () => setFilters.setExperienceFilter(""),
     });
   }
   if (filters.company.trim()) {
     activeFilterChips.push({
       key: `company:${filters.company}`,
-      label: `Company: ${filters.company}`,
+      label: `Company: ${filters.company.trim()}`,
       onRemove: () => setFilters.setCompanyFilter(""),
     });
   }
