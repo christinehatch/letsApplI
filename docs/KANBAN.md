@@ -39,15 +39,25 @@ Major capabilities already shipped and stable.
 - Done: seniority filtering
 - Done: synonym mapping
 - Done: fallback search
+- Done: applyAI role handoff (envelope endpoint, Explore in applyAI preview) — contract v1.0 locked
+- Done: Analyze Role reuses saved interpretations instead of re-running the LLM
+- Done: Today (saved searches, one-at-a-time triage, caught-up)
+- Done: Ashby adapter; 55 verified company boards (34 Greenhouse, 21 Ashby)
+- Done: roles that leave their board are closed and hidden
+- Done: real posted dates; Search and Today list newest first
+- Done: Search page leads with the jobs (count, area chips, paged list)
 ## Current Work
 
 Tasks actively being developed. Limit to 3–5 items.
 
-- Feed usability
-- Search Quality
-- Daily workflow
-- Session Start summary
-- Keyboard triage (S / K / O)
+- Milestone 6 — Personal Profile & Recommendations (plan: docs/PROFILE_PLAN.md)
+  - 6.1 Profile page and storage
+  - 6.2 Reading your sources (user-triggered, proposed facts)
+  - 6.3 Recommendations: profile → saved searches, "why this showed up"
+  - 6.4 Sidebar redesign around the profile
+  - 6.5 "How does this line up with me?" (user-triggered vetting)
+  - 6.6 applyAI return path (handoff contract v2)
+- applyAI handoff: confirm "Send to applyAI" opens applyAI in a new tab (regular browser)
 
 
 ---
@@ -56,7 +66,10 @@ Tasks actively being developed. Limit to 3–5 items.
 
 Features planned soon but not currently active.
 
-- Profile page
+- Search gaps: "or" locations (SF or Remote), South Bay cities, working experience filter
+- Saved → applied: saved date, Applied button, "saved but not applied" list
+- Follow a company
+- Keyboard triage (S / K / O), Session Start summary
 
 - Review mode
 
@@ -77,7 +90,6 @@ Features planned soon but not currently active.
 - Active filter chips
 
 - Discovery expansion
-- Ashby adapter
 - SmartRecruiters adapter
 - BambooHR adapter
 - Workday adapter
@@ -94,7 +106,6 @@ Long-term capabilities.
 
 - Personal insight layer
 - Application tracking
-- Resume intelligence
 
 ---
 
@@ -113,7 +124,6 @@ Long-term capabilities.
 
 Ideas not scheduled.
 
-- Chat interface
-- Career recommendations
+- Chat interface (the conversation lives in applyAI / career_explorer)
 - Project suggestions
 - Resume rewriting
