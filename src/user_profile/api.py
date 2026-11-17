@@ -22,11 +22,11 @@ from persistence.db import get_connection
 from persistence.repos.profile_repo import ProfileRepo
 from user_profile.extract import MAX_UPLOAD_BYTES, ExtractionError, extract_text
 from user_profile.facts import FactReadError, propose_facts
-from user_profile.website import WebsiteReadError, fetch_page_text
+from user_profile.website import WebsiteReadError, read_site
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
-UPLOAD_KINDS = ("resume", "linkedin", "transcript")
+UPLOAD_KINDS = ("resume", "linkedin", "transcript", "website")
 
 
 def _db_path() -> str:
@@ -77,7 +77,7 @@ async def upload_source(
 ):
     """The file is the raw request body (no multipart), read locally for text."""
     if kind not in UPLOAD_KINDS:
-        raise HTTPException(status_code=400, detail="Upload a resume, LinkedIn PDF, or transcript.")
+        raise HTTPException(status_code=400, detail="Upload a resume, LinkedIn PDF, transcript, or a PDF of your website.")
 
     data = await request.body()
     if len(data) > MAX_UPLOAD_BYTES:
@@ -106,15 +106,9 @@ async def upload_source(
     return {"source": _public(source)}
 
 
-class WebsitePayload(BaseModel):
-    url: str
-    label: Optional[str] = None
-
-
-@router.post("/sources/website")
-async def add_website(payload: WebsitePayload):
-    """Stores the link only. The page is read in 6.2, when the user presses Read it."""
-    url = payload.url.strip()
+def _clean_url(raw: str) -> tuple[str, str]:
+    """Return (url, host) for a plain web address, or raise a 400."""
+    url = raw.strip()
     if url and "://" not in url:
         url = f"https://{url}"
     parsed = urlparse(url)
@@ -126,17 +120,59 @@ async def add_website(payload: WebsitePayload):
     looks_like_host = "." in host and all(part for part in host.split("."))
     if parsed.scheme not in ("http", "https") or not looks_like_host or " " in url or len(url) > 500:
         raise HTTPException(status_code=400, detail="Enter a website address, like yourname.com.")
-    if parsed.netloc.lower().removeprefix("www.").endswith("linkedin.com"):
+    return url, host
+
+
+def _is_linkedin(host: str) -> bool:
+    return host == "linkedin.com" or host.endswith(".linkedin.com")
+
+
+class WebsitePayload(BaseModel):
+    url: str
+    label: Optional[str] = None
+
+
+@router.post("/sources/website")
+async def add_website(payload: WebsitePayload):
+    """Stores the link only. The page is read in 6.2, when the user presses Read it."""
+    url, host = _clean_url(payload.url)
+    if _is_linkedin(host):
         raise HTTPException(
             status_code=400,
-            detail="LinkedIn pages can't be read. Use “Save to PDF” on your LinkedIn profile and upload that instead.",
+            detail="That's a LinkedIn address. Add it in the LinkedIn section instead.",
         )
 
     conn = get_connection(_db_path())
     try:
         source = ProfileRepo(conn).add_source(
-            kind="website", label=(payload.label or parsed.netloc), url=url
+            kind="website", label=(payload.label or host.removeprefix("www.")), url=url
         )
+    finally:
+        conn.close()
+    return {"source": _public(source)}
+
+
+class LinkPayload(BaseModel):
+    url: str
+
+
+@router.post("/sources/linkedin-link")
+async def save_linkedin_link(payload: LinkPayload):
+    """
+    Save the user's LinkedIn profile address. It is kept as a link only and is
+    never fetched: LinkedIn blocks automated reading. Saving again replaces it.
+    """
+    url, host = _clean_url(payload.url)
+    if not _is_linkedin(host):
+        raise HTTPException(status_code=400, detail="Enter your LinkedIn profile address, like linkedin.com/in/yourname.")
+
+    conn = get_connection(_db_path())
+    try:
+        repo = ProfileRepo(conn)
+        for old in repo.list_sources():
+            if old["kind"] == "linkedin" and old["url"] and not old["has_file"]:
+                repo.delete_source(old["id"])
+        source = repo.add_source(kind="linkedin", label="LinkedIn profile", url=url)
     finally:
         conn.close()
     return {"source": _public(source)}
@@ -234,10 +270,17 @@ async def read_source(source_id: int, payload: ReadPayload):
         if source is None:
             raise HTTPException(status_code=404, detail="Source not found.")
 
+        if source["kind"] == "linkedin" and not source["has_file"]:
+            raise HTTPException(
+                status_code=400,
+                detail="LinkedIn links can't be read. Upload LinkedIn's “Save to PDF” file to add its details.",
+            )
+
         text = source["text"]
-        if source["kind"] == "website":
+        pages_read: list[str] = []
+        if source["kind"] == "website" and source["url"]:
             try:
-                text = await run_in_threadpool(fetch_page_text, source["url"])
+                text, pages_read = await run_in_threadpool(read_site, source["url"])
             except WebsiteReadError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             repo.set_source_text(source_id, text)
@@ -260,6 +303,7 @@ async def read_source(source_id: int, payload: ReadPayload):
             "facts": [f for f in repo.list_source_facts() if f["source_id"] == source_id],
             "proposed": added,
             "dropped": len(dropped),
+            "pages_read": pages_read,
         }
     finally:
         conn.close()

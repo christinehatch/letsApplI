@@ -1,6 +1,8 @@
 """
-Milestone 6.2: read the text of one web page the user added, once, when they
-press Read it. No crawling: only the exact URL they saved.
+Milestone 6.2: read a personal website the user added, once, when they press
+Read it: the saved page plus up to MAX_EXTRA_PAGES pages it links to on the
+same site (e.g. /about, /projects). Nothing beyond those, and nothing on
+another site.
 """
 
 from __future__ import annotations
@@ -8,10 +10,12 @@ from __future__ import annotations
 import ipaddress
 import socket
 import urllib.request
-from urllib.parse import urlparse
+from urllib.parse import urldefrag, urljoin, urlparse
 
 MAX_BYTES = 2 * 1024 * 1024
 MIN_TEXT_CHARS = 200
+MAX_EXTRA_PAGES = 5
+_SKIP_EXTENSIONS = (".pdf", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".zip", ".mp4", ".mov", ".css", ".js", ".xml", ".ico")
 TIMEOUT_S = 15
 
 
@@ -50,7 +54,60 @@ def html_to_text(html: str) -> str:
     return "\n".join(line for line in lines if line)
 
 
+def same_site_links(html: str, page_url: str) -> list[str]:
+    """Pages on the same host that this page links to, in page order, without repeats."""
+    from bs4 import BeautifulSoup
+
+    base_host = (urlparse(page_url).hostname or "").lower()
+    seen = {urldefrag(page_url)[0].rstrip("/")}
+    out: list[str] = []
+    for a in BeautifulSoup(html, "html.parser").find_all("a", href=True):
+        url = urldefrag(urljoin(page_url, a["href"]))[0]
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or (parsed.hostname or "").lower() != base_host:
+            continue
+        if parsed.path.lower().endswith(_SKIP_EXTENSIONS):
+            continue
+        key = url.rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(url)
+    return out
+
+
+def read_site(url: str, *, fetch=None) -> tuple[str, list[str]]:
+    """
+    Text of the saved page and up to MAX_EXTRA_PAGES same-site pages it links
+    to. Returns (combined_text, urls_read). `fetch` returns (text, html) and is
+    injectable for tests.
+    """
+    fetch = fetch or _fetch
+    text, html = fetch(url)
+    parts = [(url, text)]
+    for link in same_site_links(html, url)[:MAX_EXTRA_PAGES]:
+        try:
+            link_text, _ = fetch(link)
+        except WebsiteReadError:
+            continue  # a broken link shouldn't spoil the rest
+        if link_text.strip():
+            parts.append((link, link_text))
+
+    combined = "\n\n".join(f"[Page: {u}]\n{t}" for u, t in parts if t.strip())
+    if sum(len(t) for _, t in parts) < MIN_TEXT_CHARS:
+        raise WebsiteReadError(
+            "Your site has almost no readable text, even on the pages it links to (it may need "
+            "JavaScript to load). Upload a PDF of it below instead: in your browser, choose Print → Save as PDF."
+        )
+    return combined, [u for u, t in parts if t.strip()]
+
+
 def fetch_page_text(url: str) -> str:
+    """Text of a single page (kept for callers that want just one)."""
+    return _fetch(url)[0]
+
+
+def _fetch(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise WebsiteReadError("Only web addresses (http or https) can be read.")
@@ -58,7 +115,7 @@ def fetch_page_text(url: str) -> str:
         raise WebsiteReadError("Addresses on this computer or a local network can't be read.")
 
     opener = urllib.request.build_opener(_NoRedirectToPrivate)
-    req = urllib.request.Request(url, headers={"User-Agent": "letsApplI/profile-reader (one page, on request)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "letsApplI/profile-reader (on request)"})
     try:
         with opener.open(req, timeout=TIMEOUT_S) as resp:
             ctype = (resp.headers.get("Content-Type") or "").lower()
@@ -74,10 +131,6 @@ def fetch_page_text(url: str) -> str:
     if len(body) > MAX_BYTES:
         body = body[:MAX_BYTES]
     raw = body.decode(charset, errors="replace")
-    text = html_to_text(raw) if "html" in ctype else raw
-    if len(text) < MIN_TEXT_CHARS:
-        raise WebsiteReadError(
-            "That page has almost no readable text (it may need JavaScript to load). "
-            "Save it as a PDF from your browser and upload that instead."
-        )
-    return text
+    if "html" in ctype:
+        return html_to_text(raw), raw
+    return raw, ""

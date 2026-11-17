@@ -175,10 +175,37 @@ def test_website_rejects_non_web_addresses(client, url):
 
 
 @pytest.mark.parametrize("url", ["linkedin.com/in/jane", "https://www.linkedin.com/in/jane"])
-def test_linkedin_links_point_to_save_to_pdf(client, url):
+def test_linkedin_in_the_website_box_points_to_the_linkedin_section(client, url):
     res = client.post("/api/profile/sources/website", json={"url": url})
     assert res.status_code == 400
-    assert "Save to PDF" in res.json()["detail"]
+    assert "LinkedIn section" in res.json()["detail"]
+
+
+def test_linkedin_link_is_saved_as_a_link_and_never_fetched(client, monkeypatch):
+    def no_network(*a, **k):
+        raise AssertionError("a LinkedIn link must never be fetched")
+
+    monkeypatch.setattr("urllib.request.urlopen", no_network)
+    res = client.post("/api/profile/sources/linkedin-link", json={"url": "linkedin.com/in/jane"})
+    assert res.status_code == 200
+    source = res.json()["source"]
+    assert (source["kind"], source["url"], source["has_file"]) == ("linkedin", "https://linkedin.com/in/jane", False)
+
+
+def test_saving_a_new_linkedin_link_replaces_the_old_one_but_keeps_the_pdf(client):
+    pdf = upload(client, "linkedin", "Profile.pdf", make_pdf("Jane Doe, Product Designer")).json()["source"]
+    client.post("/api/profile/sources/linkedin-link", json={"url": "linkedin.com/in/jane"})
+    client.post("/api/profile/sources/linkedin-link", json={"url": "https://www.linkedin.com/in/jane-doe"})
+    sources = client.get("/api/profile").json()["sources"]
+    links = [s["url"] for s in sources if s["kind"] == "linkedin" and s["url"]]
+    assert links == ["https://www.linkedin.com/in/jane-doe"]
+    assert pdf["id"] in [s["id"] for s in sources]
+
+
+@pytest.mark.parametrize("url", ["janedoe.dev", "notlinkedin.com/in/jane", "linkedin.com.evil.io/in/jane"])
+def test_linkedin_link_must_be_linkedin(client, url):
+    res = client.post("/api/profile/sources/linkedin-link", json={"url": url})
+    assert res.status_code == 400
 
 
 # ------------------------------------------------------------

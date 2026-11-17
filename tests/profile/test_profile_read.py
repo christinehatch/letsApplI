@@ -10,7 +10,7 @@ import state as state_module
 import user_profile.api as profile_api
 from persistence.migrate import migrate
 from user_profile.facts import FactReadError, propose_facts, validate_facts
-from user_profile.website import WebsiteReadError, fetch_page_text, html_to_text
+from user_profile.website import WebsiteReadError, fetch_page_text, html_to_text, read_site, same_site_links
 
 RESUME = """Jordan Lee
 Senior Data Engineer, Acme Health (2022-2025)
@@ -146,6 +146,52 @@ def test_website_reader_refuses_local_addresses(url):
         fetch_page_text(url)
 
 
+HOME = """<html><body>
+<a href="/">Home</a> <a href="/projects">Projects</a> <a href="about#top">About</a>
+<a href="/about">About again</a> <a href="/cv.pdf">CV</a> <a href="https://github.com/jordan">GitHub</a>
+<a href="mailto:j@x.dev">Email</a> <a href="https://sub.jordan.dev/x">Other subdomain</a>
+<p>Hi.</p></body></html>"""
+
+
+def test_same_site_links_keeps_only_this_sites_pages_once():
+    assert same_site_links(HOME, "https://jordan.dev/") == [
+        "https://jordan.dev/projects",
+        "https://jordan.dev/about",
+    ]
+
+
+def test_read_site_reads_linked_pages_and_labels_each():
+    pages = {
+        "https://jordan.dev/": ("Hi.", HOME),
+        "https://jordan.dev/projects": ("Built a flight route explorer in Python. " * 5, ""),
+        "https://jordan.dev/about": ("I care about tools that explain themselves. " * 5, ""),
+    }
+    text, read = read_site("https://jordan.dev/", fetch=lambda u: pages[u])
+    assert read == ["https://jordan.dev/", "https://jordan.dev/projects", "https://jordan.dev/about"]
+    assert "[Page: https://jordan.dev/about]" in text
+    assert "flight route explorer" in text
+
+
+def test_read_site_stops_at_five_extra_pages_and_skips_broken_ones():
+    links = "".join(f'<a href="/p{i}">p{i}</a>' for i in range(10))
+    fetched = []
+
+    def fetch(u):
+        fetched.append(u)
+        if u.endswith("/p1"):
+            raise WebsiteReadError("404")
+        return ("words " * 50, f"<html>{links}</html>" if u.endswith("/") else "")
+
+    _, read = read_site("https://jordan.dev/", fetch=fetch)
+    assert len(fetched) == 6  # the page + 5 links, never more
+    assert "https://jordan.dev/p1" not in read
+
+
+def test_read_site_with_no_text_points_to_pdf_upload():
+    with pytest.raises(WebsiteReadError, match="Upload a PDF"):
+        read_site("https://jordan.dev/", fetch=lambda u: ("", "<html></html>"))
+
+
 # ------------------------------------------------------------
 # API
 # ------------------------------------------------------------
@@ -250,7 +296,7 @@ def test_missing_key_gives_a_clear_message(client, monkeypatch):
 
 def test_website_read_fetches_then_proposes(client, monkeypatch):
     page = "Jordan Lee. Senior Data Engineer, Acme Health. I write about dbt. " * 5
-    monkeypatch.setattr(profile_api, "fetch_page_text", lambda url: page)
+    monkeypatch.setattr(profile_api, "read_site", lambda url: (page, [url]))
     sid = client.post("/api/profile/sources/website", json={"url": "jordan.dev"}).json()["source"]["id"]
     body = client.post(f"/api/profile/sources/{sid}/read", json={"consent": True}).json()
     assert body["source"]["text_chars"] == len(page)
@@ -263,3 +309,36 @@ def test_deleting_a_source_deletes_its_facts(client):
     client.post(f"/api/profile/sources/{sid}/confirm-all")
     client.delete(f"/api/profile/sources/{sid}")
     assert client.get("/api/profile").json()["facts"] == []
+
+
+def test_linkedin_link_cannot_be_read_and_nothing_is_sent(client):
+    sid = client.post("/api/profile/sources/linkedin-link", json={"url": "linkedin.com/in/jordan"}).json()["source"]["id"]
+    res = client.post(f"/api/profile/sources/{sid}/read", json={"consent": True})
+    assert res.status_code == 400
+    assert "Save to PDF" in res.json()["detail"]
+    assert client.calls == []
+
+
+def test_linkedin_pdf_can_be_read(client):
+    res = client.post(
+        "/api/profile/sources/upload",
+        params={"kind": "linkedin", "filename": "Profile.txt"},
+        content=RESUME.encode(),
+    )
+    sid = res.json()["source"]["id"]
+    assert client.post(f"/api/profile/sources/{sid}/read", json={"consent": True}).status_code == 200
+
+
+def test_website_pdf_upload_is_read_without_fetching(client, monkeypatch):
+    def no_fetch(url):
+        raise AssertionError("an uploaded website PDF must not be fetched")
+
+    monkeypatch.setattr(profile_api, "read_site", no_fetch)
+    res = client.post(
+        "/api/profile/sources/upload",
+        params={"kind": "website", "filename": "My site.txt"},
+        content=RESUME.encode(),
+    )
+    sid = res.json()["source"]["id"]
+    assert res.json()["source"]["kind"] == "website"
+    assert client.post(f"/api/profile/sources/{sid}/read", json={"consent": True}).status_code == 200

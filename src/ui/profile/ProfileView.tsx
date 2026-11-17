@@ -81,11 +81,7 @@ const EMPTY_PREFS: Preferences = {
 
 const DOCUMENTS: { kind: Exclude<SourceKind, "website">; title: string; hint: string }[] = [
   { kind: "resume", title: "Resume", hint: "PDF or Word." },
-  {
-    kind: "linkedin",
-    title: "LinkedIn",
-    hint: "On your LinkedIn profile, choose More → Save to PDF, then upload that file here.",
-  },
+  { kind: "linkedin", title: "LinkedIn", hint: "" }, // rendered by LinkedInRow
   { kind: "transcript", title: "Transcripts", hint: "PDF. Unofficial copies are fine." },
 ];
 
@@ -271,7 +267,22 @@ export function ProfileView({
 
         <section style={section}>
           <h2 style={h2}>Documents</h2>
-          {DOCUMENTS.map((doc) => (
+          {DOCUMENTS.map((doc) =>
+            doc.kind === "linkedin" ? (
+              <LinkedInRow
+                key="linkedin"
+                apiUrl={apiUrl}
+                sources={(sources ?? []).filter((s) => s.kind === "linkedin")}
+                onAdded={addSource}
+                onReplaced={(source) =>
+                  setSources((prev) => [
+                    source,
+                    ...(prev ?? []).filter((s) => !(s.kind === "linkedin" && !s.has_file)),
+                  ])
+                }
+                onRemove={removeSource}
+              />
+            ) : (
             <DocumentRow
               key={doc.kind}
               apiUrl={apiUrl}
@@ -282,7 +293,8 @@ export function ProfileView({
               onAdded={addSource}
               onRemove={removeSource}
             />
-          ))}
+            ),
+          )}
         </section>
 
         <section style={section}>
@@ -351,7 +363,7 @@ function ConsentNotice({ onAnswer }: { onAnswer: (ok: boolean) => void }) {
     <div role="dialog" aria-label="Before reading" style={consentBox}>
       <div style={{ fontWeight: 600, color: "#111827", marginBottom: 6 }}>Before letsA(ppl)I reads this</div>
       <div style={{ ...hintText, color: "#374151" }}>
-        Reading sends this document's text (or, for a website, that one page) to OpenAI's API to suggest facts like
+        Reading sends this document's text (or, for a website, that page and up to 5 pages it links to on the same site) to OpenAI's API to suggest facts like
         your roles, skills and education. Grades are left out. Nothing is added to your profile until you keep it,
         and you'll only see this note once.
       </div>
@@ -377,6 +389,7 @@ function DocumentRow({
   sources,
   onAdded,
   onRemove,
+  nested = false,
 }: {
   apiUrl: (path: string) => string;
   kind: string;
@@ -385,6 +398,7 @@ function DocumentRow({
   sources: Source[];
   onAdded: (s: Source) => void;
   onRemove: (s: Source) => void;
+  nested?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -412,10 +426,10 @@ function DocumentRow({
   };
 
   return (
-    <div style={row}>
+    <div style={nested ? { padding: "10px 0 0", borderTop: "1px dashed #e5e7eb" } : row}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
         <div>
-          <div style={rowTitle}>{title}</div>
+          <div style={nested ? { ...rowTitle, fontSize: 13 } : rowTitle}>{title}</div>
           <div style={hintText}>{hint}</div>
         </div>
         <button style={btn} onClick={() => inputRef.current?.click()} disabled={uploading}>
@@ -461,6 +475,9 @@ function SourceItem({
   const proposed = mine.filter((f) => f.status === "proposed");
   const confirmed = mine.filter((f) => f.status === "confirmed");
   const isWebsite = source.kind === "website";
+  const isLinkedInLink = source.kind === "linkedin" && !source.has_file;
+  const isWebsiteLink = isWebsite && !source.has_file;
+  const isLink = isWebsiteLink || isLinkedInLink;
 
   const toggle = async () => {
     if (!open && text === null) {
@@ -498,6 +515,17 @@ function SourceItem({
       if (data.dropped > 0) {
         parts.push(`${data.dropped} left out because they weren't in the text as written.`);
       }
+      const pages: string[] = Array.isArray(data.pages_read) ? data.pages_read : [];
+      if (pages.length > 0) {
+        const paths = pages.map((u) => {
+          try {
+            return new URL(u).pathname || "/";
+          } catch {
+            return u;
+          }
+        });
+        parts.unshift(`Read ${pages.length} page${pages.length === 1 ? "" : "s"}: ${paths.join(", ")}.`);
+      }
       setReadNote(parts.join(" "));
     } catch (e) {
       setReadError(e instanceof Error ? e.message : "Couldn't read this.");
@@ -526,7 +554,9 @@ function SourceItem({
     if (res.ok) ctx.setSourceFacts(source.id, data.facts);
   };
 
-  const status = isWebsite
+  const status = isLinkedInLink
+    ? "saved as a link · LinkedIn can't be read automatically"
+    : isWebsiteLink
     ? source.read_at
       ? `read ${addedOn(source.read_at)} · ${source.text_chars.toLocaleString()} characters`
       : "saved as a link, not read yet"
@@ -536,7 +566,7 @@ function SourceItem({
     <div style={sourceItem}>
       <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
         <span style={{ fontWeight: 600, color: "#111827", wordBreak: "break-word" }}>
-          {isWebsite && source.url ? (
+          {isLink && source.url ? (
             <a href={source.url} target="_blank" rel="noreferrer" style={{ color: "#185fa5" }}>{source.url}</a>
           ) : (
             source.label
@@ -544,9 +574,11 @@ function SourceItem({
         </span>
         <span style={meta}>added {addedOn(source.added_at)} · {status}</span>
         <span style={{ flex: 1 }} />
-        <button style={{ ...linkBtn, fontWeight: 600 }} onClick={read} disabled={reading}>
-          {reading ? "Reading…" : source.read_at ? "Read again" : "Read it"}
-        </button>
+        {!isLinkedInLink && (
+          <button style={{ ...linkBtn, fontWeight: 600 }} onClick={read} disabled={reading}>
+            {reading ? "Reading…" : source.read_at ? "Read again" : "Read it"}
+          </button>
+        )}
         {source.text_chars > 0 && (
           <button style={linkBtn} onClick={toggle} aria-expanded={open}>
             {open ? "Hide text" : "See what was read"}
@@ -564,7 +596,7 @@ function SourceItem({
       {proposed.length > 0 && (
         <div style={reviewBox}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <div style={{ fontWeight: 600, color: "#111827" }}>Suggested from this {isWebsite ? "page" : "file"}</div>
+            <div style={{ fontWeight: 600, color: "#111827" }}>Suggested from this {isWebsiteLink ? "site" : "file"}</div>
             <button style={btn} onClick={keepAll}>Keep all {proposed.length}</button>
           </div>
           <div style={{ ...hintText, marginBottom: 6 }}>Check each one. Only what you keep joins your profile.</div>
@@ -588,7 +620,7 @@ function SourceItem({
 
       {confirmed.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={{ ...hintText, marginBottom: 4 }}>In your profile from this {isWebsite ? "page" : "file"}:</div>
+          <div style={{ ...hintText, marginBottom: 4 }}>In your profile from this {isWebsiteLink ? "site" : "file"}:</div>
           {FACT_KIND_ORDER.filter((k) => confirmed.some((f) => f.kind === k)).map((kind) => (
             <div key={kind} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginTop: 4 }}>
               <span style={{ fontSize: 12, color: "#6b7280", width: 92, flexShrink: 0, paddingTop: 4 }}>{FACT_KIND_LABELS[kind]}</span>
@@ -671,6 +703,112 @@ function ProposedFact({
   );
 }
 
+function LinkedInRow({
+  apiUrl,
+  sources,
+  onAdded,
+  onReplaced,
+  onRemove,
+}: {
+  apiUrl: (path: string) => string;
+  sources: Source[];
+  onAdded: (s: Source) => void;
+  onReplaced: (s: Source) => void;
+  onRemove: (s: Source) => void;
+}) {
+  const link = sources.find((s) => !s.has_file) ?? null;
+  const pdfs = sources.filter((s) => s.has_file);
+  const [url, setUrl] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [rowError, setRowError] = useState<string | null>(null);
+  const showForm = !link || editing;
+
+  const save = async () => {
+    if (!url.trim()) return;
+    setSaving(true);
+    setRowError(null);
+    try {
+      const res = await fetch(apiUrl("/api/profile/sources/linkedin-link"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.status === 404 || res.status === 405) {
+        throw new Error("The API server is running an older version. Restart bridge_server.py to save a LinkedIn link.");
+      }
+      if (!res.ok) throw new Error(data?.detail || "Couldn't save that link.");
+      onReplaced(data.source);
+      setUrl("");
+      setEditing(false);
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : "Couldn't save that link.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={row}>
+      <div style={rowTitle}>LinkedIn</div>
+      <div style={hintText}>Your profile address, saved as a link.</div>
+      {showForm ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
+          style={{ display: "flex", gap: 8, marginTop: 8 }}
+        >
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="linkedin.com/in/yourname"
+            aria-label="LinkedIn profile address"
+            style={{ ...input, flex: 1 }}
+          />
+          <button type="submit" style={btn} disabled={saving || !url.trim()}>
+            Save
+          </button>
+          {editing && (
+            <button type="button" style={btn} onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          )}
+        </form>
+      ) : (
+        <div style={{ position: "relative" }}>
+          <SourceItem apiUrl={apiUrl} source={link} onRemove={onRemove} />
+          <button
+            style={{ ...linkBtn, marginTop: 4 }}
+            onClick={() => {
+              setUrl(link.url ?? "");
+              setEditing(true);
+            }}
+          >
+            Change link
+          </button>
+        </div>
+      )}
+      {rowError && <div style={rowErrorText}>{rowError}</div>}
+
+      <div style={{ marginTop: 12 }}>
+        <DocumentRow
+          apiUrl={apiUrl}
+          kind="linkedin"
+          title="Add details from LinkedIn (optional)"
+          hint="LinkedIn can't be read from a link. If your LinkedIn has things your resume doesn't (older roles, certifications, volunteering), open your profile, choose More → Save to PDF, and upload that file."
+          sources={pdfs}
+          onAdded={onAdded}
+          onRemove={onRemove}
+          nested
+        />
+      </div>
+    </div>
+  );
+}
+
 function WebsiteRow({
   apiUrl,
   sources,
@@ -709,7 +847,10 @@ function WebsiteRow({
 
   return (
     <div style={row}>
-      <div style={hintText}>Saved as a link. The page is only read when you choose to.</div>
+      <div style={hintText}>
+        Saved as a link. When you press Read it, the page and up to 5 pages it links to on the same site (like About
+        or Projects) are read.
+      </div>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -729,9 +870,24 @@ function WebsiteRow({
         </button>
       </form>
       {rowError && <div style={rowErrorText}>{rowError}</div>}
-      {sources.map((s) => (
-        <SourceItem key={s.id} apiUrl={apiUrl} source={s} onRemove={onRemove} />
-      ))}
+      {sources
+        .filter((s) => !s.has_file)
+        .map((s) => (
+          <SourceItem key={s.id} apiUrl={apiUrl} source={s} onRemove={onRemove} />
+        ))}
+
+      <div style={{ marginTop: 12 }}>
+        <DocumentRow
+          apiUrl={apiUrl}
+          kind="website"
+          title="Or upload a PDF of your site"
+          hint="For sites that can't be read from a link. In your browser, open each page you want included and choose Print → Save as PDF."
+          sources={sources.filter((s) => s.has_file)}
+          onAdded={onAdded}
+          onRemove={onRemove}
+          nested
+        />
+      </div>
     </div>
   );
 }

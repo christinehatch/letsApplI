@@ -80,8 +80,8 @@ that intent but allows **explainable, user-owned matching**:
 | Source | How it's added | What's kept | AI used? |
 |---|---|---|---|
 | Resume | Upload PDF or DOCX | File + extracted text | Only when you press **Read it** |
-| LinkedIn | Upload LinkedIn's **Save to PDF** of your profile | File + extracted text | Only when you press **Read it** |
-| Personal website | Paste a URL; fetched once when you press **Read it** (same consent pattern as job hydration) | Fetched text, fetch date | Only when you press **Read it** |
+| LinkedIn | Save the profile link (never fetched), and optionally upload LinkedIn's **Save to PDF** | Link; file + extracted text | PDF only, when you press **Read it** |
+| Personal website | Paste a URL; that page plus up to 5 same-site pages it links to are fetched when you press **Read it**. Or upload a PDF of the site. | Fetched text, fetch date | Only when you press **Read it** |
 | Transcripts | Upload PDF | File + extracted text | Only when you press **Read it** |
 | Skills & tools | Typed list, editable chips | The list | No |
 | Where & how you want to work | Form: locations, remote/hybrid, level, company size, industries to include or avoid | The answers | No |
@@ -260,9 +260,9 @@ The contract revision is drafted before 6.6 starts and agreed in both repos.
 
 1. **Transcripts:** grades are sensitive and rarely matter to postings.
    Extract only courses and degrees, never grades? (Proposed: yes.)
-2. **Website:** read one page, or follow links on the same site (e.g. a
-   projects page)? (Proposed: the one page, plus up to 5 same-site links the
-   user ticks.)
+2. **Website:** *Decided:* the saved page plus up to 5 pages it links to on
+   the same site, read only on Read it, and listed after reading. Sites that
+   can't be read can be uploaded as a PDF instead.
 3. **Re-reading:** when a resume is replaced, keep confirmed facts from the
    old version that the new one doesn't mention? (Proposed: ask.)
 4. **Which model** for reading and vetting: the same one Phase 5.2 uses today.
