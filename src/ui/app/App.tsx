@@ -4,9 +4,9 @@ import { type Phase6SidePanelHandle } from "../phase6/Phase6SidePanel";
 import { FeedSidebar } from "../feed/FeedSidebar";
 import { isLikelyAiRole } from "../feed/JobCard";
 import { SavedJobsBoard } from "../feed/SavedJobsBoard";
-import { RightPanel } from "../rightpanel/RightPanel";
 import MarketJobGrid from "../components/MarketJobGrid";
 import { ApplyAIHandoff } from "../components/ApplyAIHandoff";
+import { JobDetail } from "../job/JobDetail";
 import { TodayView } from "../today/TodayView";
 import { SaveSearchControl } from "../today/SaveSearchControl";
 import { CenterPanelShell } from "./CenterPanelShell";
@@ -1227,7 +1227,7 @@ function EvidenceBlock({ spanIds }: { spanIds: string[] }) {
         }}
         onClick={() => setOpen(!open)}
       >
-        Evidence ({evidenceTexts.length}) {open ? "▲" : "▼"}
+        {open ? "▾" : "▸"} {evidenceTexts.length} {evidenceTexts.length === 1 ? "line" : "lines"} from the posting
       </div>
 
       {open && (
@@ -1571,407 +1571,39 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                   </div>
                   </CenterPanelShell>
               ) : (
-                  <CenterPanelShell
-                    title={selectedJob.title}
-                    subtitle={[selectedJob.company, selectedJob.location, `Posted ${formatPostedDate(selectedJob.posted_at)}`]
-                      .filter(Boolean)
-                      .join(" • ")}
-                    actions={(
-                      <button
-                        onClick={() => setSelectedJobParam(null)}
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: "999px",
-                          border: "1px solid #d1d5db",
-                          background: "#fff",
-                          color: "#374151",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                        title="Back to role jobs"
-                      >
-                        ← {roleCategory ? `${formatRoleLabel(roleCategory)} roles` : "All roles"}
-                      </button>
-                    )}
-                  >
-                      {isReading && (
-                        <div style={{ display: "flex", alignItems: "center", marginBottom: "12px", color: "#0070f3", fontWeight: 500 }}>
-                          <div style={spinnerStyle}></div>
-                          Hydrating job posting...
-                        </div>
-                      )}
-                      {isInterpreting && (
-                        <div style={{ display: "flex", alignItems: "center", marginBottom: "12px", color: "#7c3aed", fontWeight: 500 }}>
-                          <div style={spinnerStyle}></div>
-                          Analyzing role structure...
-                        </div>
-                      )}
-                      {interpretationNotice && (
-                        <div
-                          style={{
-                            marginBottom: "12px",
-                            padding: "10px 12px",
-                            borderRadius: "8px",
-                            border: "1px solid #f5c2c7",
-                            background: "#fff1f2",
-                            color: "#7f1d1d",
-                            fontSize: "13px",
-                          }}
-                        >
-                          {interpretationNotice}
-                        </div>
-                      )}
-                      {userPreviewUrl && !hydratedContent && (
-                          <div style={{
-                              backgroundColor: "#fff",
-                              borderRadius: "12px",
-                              border: "1px solid #eee",
-                              overflow: "hidden"
-                          }}>
-                              <div style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                  padding: "12px 16px",
-                                  borderBottom: "1px solid #eee"
-                              }}>
-                                  <div>
-                                      <div style={{fontWeight: 700}}>User Preview</div>
-                                      <div style={{fontSize: "12px", color: "#666"}}>
-                                          This is a server-rendered preview. Hydration requires consent in the right
-                                          panel.
-                                      </div>
-                                  </div>
-                                  <button
-                                      onClick={() => setUserPreviewUrl(null)}
-                                      style={{
-                                          border: "1px solid #ddd",
-                                          background: "#fff",
-                                          borderRadius: "8px",
-                                          padding: "8px 12px",
-                                          cursor: "pointer"
-                                      }}
-                                  >
-                                      Close
-                                  </button>
-                              </div>
-
-                              <embed
-                                  src={apiUrl(`/api/user-preview?url=${encodeURIComponent(userPreviewUrl)}&v=${previewVersion}`)}
-                                  type="application/pdf"
-                                  style={{width: "100%", height: "70vh", border: "0"}}
-                              />
-                          </div>
-                      )}
-
-                      <div style={{marginBottom: "16px"}}>
-                          <button
-                              onClick={() => handleSaveJob(selectedJob.id, selectedJob.state)}
-                              style={{
-                                  padding: "10px 16px",
-                                  borderRadius: "8px",
-                                  border: "1px solid #ddd",
-                                  color: selectedJob.state === "saved" ? "#7a5a00" : "#333",
-                                  textDecoration: "none",
-                                  fontWeight: 600,
-                                  background: "#fff",
-                                  marginRight: "8px",
-                                  cursor: "pointer"
-                              }}
-                          >
-                              {selectedJob.state === "saved" ? "★ Saved" : "⭐ Save Job"}
-                          </button>
-                          <button
-                              onClick={() => handleIgnoreJob(selectedJob.id)}
-                              style={{
-                                  padding: "10px 14px",
-                                  borderRadius: "8px",
-                                  border: "1px solid #ddd",
-                                  color: "#6b7280",
-                                  textDecoration: "none",
-                                  fontWeight: 600,
-                                  background: "#fff",
-                                  marginRight: "8px",
-                                  cursor: "pointer"
-                              }}
-                              title="Skip job"
-                              aria-label="Skip job"
-                          >
-                              × Skip
-                          </button>
-                          <label style={{ marginRight: "8px", color: "#555", fontSize: "14px" }}>
-                              Status
-                          </label>
-                          <select
-                              value={selectedJob.state ?? "saved"}
-                              onChange={(e) => handleUpdateJobState(selectedJob.id, e.target.value)}
-                              style={{
-                                  padding: "10px 12px",
-                                  borderRadius: "8px",
-                                  border: "1px solid #ddd",
-                                  background: "#fff",
-                                  marginRight: "8px",
-                              }}
-                          >
-                              <option value="saved">Saved</option>
-                              <option value="applied">Applied</option>
-                              <option value="interview">Interview</option>
-                              <option value="offer">Offer</option>
-                              <option value="rejected">Rejected</option>
-                              <option value="archived">Archived</option>
-                          </select>
-                          <a
-                              href={selectedJob.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{
-                                  padding: "10px 16px",
-                                  borderRadius: "8px",
-                                  border: "1px solid #ddd",
-                                  color: "#333",
-                                  textDecoration: "none",
-                                  fontWeight: 600,
-                                  background: "#fff"
-                              }}
-                          >
-                              View on Company Site
-                          </a>
-                      </div>
-                      {hydrationUiState === "HYDRATION_BLOCKED" ? (
-                          <div
-                              style={{
-                                  background: "#fff",
-                                  border: "1px solid #eee",
-                                  borderRadius: "12px",
-                                  padding: "20px",
-                              }}
-                          >
-                              <h2 style={{ marginTop: 0 }}>This job posting can't be automatically loaded.</h2>
-                              <p style={{ color: "#666", marginBottom: "14px" }}>
-                                  Some job sites block automated access.
-                                  <br />
-                                  You can still analyze the role by pasting the job description below.
-                              </p>
-                              <textarea
-                                  value={manualRawContent}
-                                  onChange={(e) => setManualRawContent(e.target.value)}
-                                  placeholder="Paste the full job description here. Include responsibilities, requirements, and any role details you want analyzed."
-                                  style={{
-                                      width: "100%",
-                                      minHeight: "220px",
-                                      padding: "12px",
-                                      border: "1px solid #ddd",
-                                      borderRadius: "8px",
-                                      resize: "vertical",
-                                      fontFamily: "inherit",
-                                      fontSize: "14px",
-                                      lineHeight: 1.4,
-                                      marginBottom: "12px",
-                                  }}
-                              />
-                              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                                  <button
-                                      onClick={handleManualInterpretation}
-                                      disabled={!manualRawContent.trim() || isInterpreting}
-                                      style={{
-                                          padding: "10px 16px",
-                                          borderRadius: "8px",
-                                          border: "1px solid #ddd",
-                                          background: "#fff",
-                                          fontWeight: 600,
-                                          cursor: !manualRawContent.trim() || isInterpreting ? "not-allowed" : "pointer",
-                                          opacity: !manualRawContent.trim() || isInterpreting ? 0.6 : 1,
-                                      }}
-                                  >
-                                      Analyze Role
-                                  </button>
-                                  <a
-                                      href={selectedJob.url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      style={{
-                                          padding: "10px 16px",
-                                          borderRadius: "8px",
-                                          border: "1px solid #ddd",
-                                          color: "#333",
-                                          textDecoration: "none",
-                                          fontWeight: 600,
-                                          background: "#fff",
-                                      }}
-                                  >
-                                      Open Job Page
-                                  </a>
-                              </div>
-                          </div>
-                      ) : !hydratedContent ? (
-                          <div style={{textAlign: "center", padding: "60px"}}>
-                              <h2>{selectedJob.title} at {selectedJob.company}</h2>
-                              {isReading && (
-                                <div>
-                                  {Array.from({ length: 12 }).map((_, i) => (
-                                    <div key={i} style={skeletonLine}></div>
-                                  ))}
-                                </div>
-                              )}
-                          </div>
-                      ) : (
-
-                          /* Hydrated Analysis View (Phase 5.1 & 5.2) */
-                          <div style={{marginTop: "24px"}}>
-                              <div style={{display: "flex", gap: "10px", marginBottom: "16px"}}>
-
-                                  <button
-                                      disabled={!interpretationResult}
-                                      onClick={() => setView("structured")}
-                                      style={{
-                                          ...tabStyle(view === "structured"),
-                                          opacity: interpretationResult ? 1 : 0.4,
-                                          cursor: interpretationResult ? "pointer" : "not-allowed"
-                                      }}
-                                  >
-                                      {!interpretationResult
-                                          ? "Role Snapshot (Disabled)"
-                                          : "Role Snapshot"}
-                                  </button>
-
-                                  <button
-                                      onClick={() => setView("raw")}
-                                      style={tabStyle(view === "raw")}
-                                  >
-                                      Raw Content (5.1)
-                                  </button>
-
-                              </div>
-                              {view === 'raw' ? (
-                                  <div>
-                                      <div ref={jobDescriptionRef} style={contentBoxStyle}>
-                                          {hydratedContent ? renderJobContent(hydratedContent) : null}
-                                      </div>
-                                  </div>
-                              ) : (
-                                  <div
-                                      style={{
-                                          background: "#f5f6f8",
-                                          height: "100%",
-                                          overflowY: "auto",
-                                          padding: "24px",
-                                          borderRadius: "12px",
-                                      }}
-                                  >
-                                      <div
-                                          style={{
-                                              maxWidth: "760px",
-                                              margin: "0 auto",
-                                          }}
-                                      >
-                                          {interpretationResult ? (
-                                              <div style={{display: "grid", gap: "0px"}}>
-                                                  <Card title="Role Snapshot">
-                                                      <p style={{ margin: 0, color: "#555", fontSize: "14px" }}>
-                                                          Structured role analysis derived from grounded evidence spans.
-                                                      </p>
-                                                  </Card>
-
-                                                  <Card title="Primary Focus">
-                                                      <p style={{margin: 0, color: "#333"}}>
-                                                          {interpretationResult?.RoleSummary?.summary_text ?? "No role summary provided."}
-                                                      </p>
-                                                      <EvidenceBlock spanIds={interpretationResult?.RoleSummary?.evidence_span_ids ?? []} />
-                                                  </Card>
-
-                                                  <Card title="Key Capabilities">
-                                                      {(interpretationResult?.CapabilityEmphasisSignals ?? []).length > 0 ? (
-                                                          <div style={{display: "grid", gap: "12px"}}>
-                                                              {(interpretationResult?.CapabilityEmphasisSignals ?? []).map((signal: any, i: number) => (
-                                                                  <div key={i}>
-                                                                      <div style={{fontWeight: 600, color: "#1f2937"}}>{signal.domain_label}</div>
-                                                                      <div style={{fontSize: "14px", color: "#444"}}>{signal.description}</div>
-                                                                      <EvidenceBlock spanIds={signal.evidence_span_ids ?? []} />
-                                                                  </div>
-                                                              ))}
-                                                          </div>
-                                                      ) : (
-                                                          <p style={{margin: 0, color: "#666"}}>No capability signals provided.</p>
-                                                      )}
-                                                  </Card>
-
-                                                  <Card title="Signals">
-                                                      {(interpretationResult?.RequirementsAnalysis?.implicit_signals ?? []).length > 0 ? (
-                                                          <div style={{display: "grid", gap: "10px"}}>
-                                                              {(interpretationResult?.RequirementsAnalysis?.implicit_signals ?? []).map((signal: any, i: number) => (
-                                                                  <div key={i}>
-                                                                      <div style={{fontSize: "14px", color: "#444"}}>{signal.signal_text}</div>
-                                                                      <EvidenceBlock spanIds={signal.evidence_span_ids ?? []} />
-                                                                  </div>
-                                                              ))}
-                                                          </div>
-                                                      ) : (
-                                                          <p style={{margin: 0, color: "#666"}}>No implicit signals provided.</p>
-                                                      )}
-                                                  </Card>
-
-                                                  <Card title="Project Surfaces">
-                                                      {(interpretationResult?.ProjectOpportunitySignals ?? []).length > 0 ? (
-                                                          <div style={{display: "grid", gap: "12px"}}>
-                                                              {(interpretationResult?.ProjectOpportunitySignals ?? []).map((signal: any, i: number) => (
-                                                                  <div key={i}>
-                                                                      <div style={{fontWeight: 600}}>{signal.capability_surface}</div>
-                                                                      <div style={{fontSize: "14px", color: "#444"}}>{signal.description}</div>
-                                                                      <EvidenceBlock spanIds={signal.evidence_span_ids ?? []} />
-                                                                  </div>
-                                                              ))}
-                                                          </div>
-                                                      ) : (
-                                                          <p style={{margin: 0, color: "#666"}}>No project opportunity signals provided.</p>
-                                                      )}
-                                                  </Card>
-
-                                                  <ApplyAIHandoff jobId={selectedJob.id} apiUrl={apiUrl} />
-                                              </div>
-                                          ) : (
-                                              <div style={{textAlign: 'center', padding: '40px'}}>
-                                                  <h3 style={{color: '#333'}}>Waiting for Analysis Authorization</h3>
-                                                  <p style={{color: '#666'}}>
-                                                      Complete the consent flow in the right panel to enable structured
-                                                      interpretation.
-                                                  </p>
-                                              </div>
-                                          )}
-                                      </div>
-                                  </div>
-                              )}
-                          </div>
-                      )}
-                  </CenterPanelShell>
+                  <JobDetail
+                    job={selectedJob}
+                    backLabel={roleCategory ? `${formatRoleLabel(roleCategory)} roles` : "All roles"}
+                    onBack={() => setSelectedJobParam(null)}
+                    onSave={() => handleSaveJob(selectedJob.id, selectedJob.state)}
+                    onSkip={() => handleIgnoreJob(selectedJob.id)}
+                    onStatusChange={(state) => handleUpdateJobState(selectedJob.id, state)}
+                    postingContent={hydratedContent}
+                    renderPosting={(content) => renderJobContent(content)}
+                    postingRef={jobDescriptionRef}
+                    isReading={isReading}
+                    postingBlocked={hydrationUiState === "HYDRATION_BLOCKED"}
+                    manualText={manualRawContent}
+                    setManualText={setManualRawContent}
+                    onSummarizePasted={handleManualInterpretation}
+                    view={view}
+                    setView={setView}
+                    interpretation={interpretationResult}
+                    isInterpreting={isInterpreting}
+                    notice={interpretationNotice}
+                    onSummarize={() => requestInterpretation(selectedJob.id)}
+                    onStopAnalyzing={handleConsentRevoked}
+                    additionalContext={additionalContext}
+                    setAdditionalContext={setAdditionalContext}
+                    onResummarizeWithContext={handleReinterpretWithContext}
+                    renderEvidence={(spanIds) => <EvidenceBlock spanIds={spanIds} />}
+                    footerExtra={<ApplyAIHandoff jobId={selectedJob.id} apiUrl={apiUrl} />}
+                  />
               )}
               </div>
           </main>
 
-          {/* 3. Authority SidePanel (Right) */}
-          {viewMode === "feed" && selectedJob && (
-              <div style={{
-                  width: "360px",
-                  borderLeft: "1px solid #eee",
-                  backgroundColor: "#fff",
-                  height: "100vh",
-                  overflowY: "auto"   // 🔥 independent scroll
-              }}>
-                  <RightPanel
-                      ref={phase6Ref}
-                      jobId={selectedJob.id}
-                      jobTitle={selectedJob.title}
-                      loadingArtifacts={loadingArtifacts}
-                      additionalContext={additionalContext}
-                      setAdditionalContext={setAdditionalContext}
-                      handleReinterpretWithContext={handleReinterpretWithContext}
-                      isInterpreting={isInterpreting}
-                      hydrationIncomplete={hydrationIncomplete}
-                      onConsentGranted={handleConsentHandoff}
-                      onConsentRevoked={handleConsentRevoked}
-                  />
-              </div>
-          )}
+          {/* Analysis controls now live inline in JobDetail; the right panel is retired. */}
           </>
           )}
 

@@ -69,19 +69,32 @@ export function FeedSidebar({
   saveSearchSlot,
 }: FeedSidebarProps) {
   const [sidebarSearch, setSidebarSearch] = React.useState("");
-  const [showKeyboardHint, setShowKeyboardHint] = React.useState(true);
+  const [showKeyboardHint, setShowKeyboardHint] = React.useState(false);
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const filterSummary = [
+    filters.role.trim(),
+    filters.location.trim(),
+    filters.company.trim(),
+    filters.experience.trim(),
+    filters.aiOnly ? "AI only" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const ACRONYMS = new Set(["ai", "ml", "ui", "ux", "qa", "sre", "llm", "nlp"]);
   const formatRoleLabel = (role: string): string =>
     role
       .replace(/[_-]+/g, " ")
       .toLowerCase()
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+      .split(" ")
+      .map((w) => (ACRONYMS.has(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+      .join(" ");
 
   const isFeedLanding = viewMode === "feed" && !selectedJob;
   const isFeedSelected = viewMode === "feed" && !!selectedJob;
   const isInboxMode = viewMode === "saved" || isFeedSelected;
   const roleTitle =
     roleCategory && roleCategory.trim().length > 0
-      ? `${formatRoleLabel(roleCategory)} Roles`
+      ? `${formatRoleLabel(roleCategory)} roles`
       : "Search";
   const title = isFeedLanding ? "Search" : isFeedSelected ? roleTitle : "Application Inbox";
   const subtitle = isFeedLanding
@@ -176,65 +189,27 @@ export function FeedSidebar({
         <div style={{ fontSize: "18px", fontWeight: 700, color: "#111827", marginBottom: "8px" }}>
           {title}
         </div>
-        <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: isInboxMode ? "16px" : "0" }}>
-          {subtitle}
-        </div>
-        {isInboxMode && showKeyboardHint && (
-          <div style={{ marginBottom: "16px" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "8px",
-                marginBottom: "8px",
-              }}
+        {!isInboxMode && (
+          <div style={{ fontSize: "12px", color: "#6b7280" }}>
+            {subtitle}
+          </div>
+        )}
+        {isInboxMode && (
+          <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "4px" }}>
+            J next · S save · K skip · O open ·{" "}
+            <button
+              type="button"
+              onClick={() => setShowKeyboardHint(!showKeyboardHint)}
+              style={{ border: "none", background: "transparent", color: "#185fa5", cursor: "pointer", padding: 0, fontSize: "12px" }}
+              aria-expanded={showKeyboardHint}
             >
-              <div style={{ fontSize: "12px", fontWeight: 600, color: "#4b5563" }}>
-                Keyboard triage
+              {showKeyboardHint ? "fewer keys" : "all keys"}
+            </button>
+            {showKeyboardHint && (
+              <div style={{ marginTop: "6px", lineHeight: 1.7 }}>
+                Shift+J previous · Shift+K undo skip · A summarize
               </div>
-              <button
-                type="button"
-                onClick={dismissKeyboardHint}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  background: "#fff",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#4b5563",
-                  padding: "4px 8px",
-                  cursor: "pointer",
-                }}
-              >
-                Got it
-              </button>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-              {[
-                "J next",
-                "Shift+J prev",
-                "S save",
-                "K skip",
-                "Shift+K unskip",
-                "O open",
-                "A analyze",
-              ].map((shortcut) => (
-                <span
-                  key={shortcut}
-                  style={{
-                    fontSize: "12px",
-                    color: "#4b5563",
-                    border: "1px solid #e5e7eb",
-                    background: "#f9fafb",
-                    borderRadius: "6px",
-                    padding: "4px 8px",
-                  }}
-                >
-                  {shortcut}
-                </span>
-              ))}
-            </div>
+            )}
           </div>
         )}
         {viewMode === "saved" && (
@@ -256,10 +231,33 @@ export function FeedSidebar({
           </div>
         )}
       </div>
-      {viewMode === "feed" && (
+      {viewMode === "feed" && isFeedSelected && !filtersOpen && (
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #eee", display: "flex", gap: "8px", alignItems: "center" }}>
+          <div style={{ fontSize: "13px", color: "#374151", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {filterSummary || "All roles"}
+          </div>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen(true)}
+            style={{ marginLeft: "auto", border: "none", background: "transparent", color: "#185fa5", cursor: "pointer", fontSize: "13px", padding: 0, flexShrink: 0 }}
+          >
+            Edit
+          </button>
+        </div>
+      )}
+      {viewMode === "feed" && (!isFeedSelected || filtersOpen) && (
         <>
-          <div style={{ padding: "16px 16px 8px 16px", fontSize: "12px", fontWeight: 600, color: "#6b7280" }}>
-            Sidebar Filters
+          <div style={{ padding: "16px 16px 8px 16px", fontSize: "12px", fontWeight: 600, color: "#6b7280", display: "flex" }}>
+            Filters
+            {isFeedSelected && (
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(false)}
+                style={{ marginLeft: "auto", border: "none", background: "transparent", color: "#185fa5", cursor: "pointer", fontSize: "12px", padding: 0 }}
+              >
+                Done
+              </button>
+            )}
           </div>
           <FeedFilters
             filters={filters}

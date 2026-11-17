@@ -195,7 +195,8 @@ class JobsRepo:
               jobs.provider,
               job_user_state.state,
               jobs.raw_provider_payload_json,
-              ji.interpretation_json
+              ji.interpretation_json,
+              jobs.discovered_at
             FROM jobs
             LEFT JOIN job_user_state
               ON jobs.provider_job_key = job_user_state.job_id
@@ -237,6 +238,7 @@ class JobsRepo:
                     "location": row[3],
                     "url": row[4],
                     "posted_at": row[5],
+                    "first_seen_at": row[10],
                     "provider": row[6],
                     "state": row[7],
                     "ai_relevance_score": ai_relevance_score,
@@ -257,7 +259,8 @@ class JobsRepo:
               jobs.url,
               jobs.posted_at,
               jobs.provider,
-              job_user_state.state
+              job_user_state.state,
+              jobs.discovered_at
             FROM jobs
             JOIN job_user_state
               ON jobs.provider_job_key = job_user_state.job_id
@@ -278,6 +281,7 @@ class JobsRepo:
                     "posted_at": row[5],
                     "provider": row[6],
                     "state": row[7],
+                    "first_seen_at": row[8],
                 }
             )
         return jobs

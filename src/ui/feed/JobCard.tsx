@@ -6,6 +6,7 @@ type Job = {
   title: string;
   location?: string;
   posted_at?: string | null;
+  first_seen_at?: string | null;
   provider?: string;
   state?: string | null;
   ai_relevance_score?: number | null;
@@ -65,11 +66,14 @@ function formatPostedDate(postedAt?: string | null): string {
     return `${days} days ago`;
   }
 
-  const weeks = Math.floor(days / 7);
-  if (weeks === 1) {
-    return "1 week ago";
+  if (days < 60) {
+    const weeks = Math.floor(days / 7);
+    return weeks === 1 ? "1 week ago" : `${weeks} weeks ago`;
   }
-  return `${weeks} weeks ago`;
+  if (days < 365) {
+    return `${Math.floor(days / 30)} months ago`;
+  }
+  return "over a year ago";
 }
 
 function formatStateLabel(state?: string | null): string | null {
@@ -123,8 +127,12 @@ export const JobCard = memo(function JobCard({
 }: JobCardProps) {
   const [isHovered, setIsHovered] = React.useState(false);
   const SAVED_STATES = ["saved", "applied", "interview", "offer"];
-  const formattedPostedDate = formatPostedDate(job.posted_at);
-  const formattedProvider = formatProvider(job.provider);
+  // Most boards don't publish a posted date; fall back to when letsA(ppl)I first saw the role.
+  const dateLabel = job.posted_at
+    ? `Posted ${formatPostedDate(job.posted_at)}`
+    : job.first_seen_at
+      ? `First seen ${formatPostedDate(job.first_seen_at).toLowerCase()}`
+      : null;
   const stateLabel = formatStateLabel(job.state);
   const isSaved = SAVED_STATES.includes(job.state ?? "");
   const showAiBadge = isLikelyAiRole(job.title);
@@ -268,7 +276,7 @@ export const JobCard = memo(function JobCard({
         <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>{job.location}</div>
       )}
       <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
-        Posted {formattedPostedDate} • {formattedProvider}
+        {dateLabel}
       </div>
       {stateLabel && (
         <div
