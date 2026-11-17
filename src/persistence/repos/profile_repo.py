@@ -181,3 +181,88 @@ class ProfileRepo:
         )
         self.conn.commit()
         return self.get_preferences()
+
+    # ------------------------------------------------------------
+    # Facts read from a source (6.2): proposed → confirmed / rejected
+    # ------------------------------------------------------------
+
+    def set_source_text(self, source_id: int, text: str) -> None:
+        self.conn.execute(
+            "UPDATE profile_sources SET extracted_text = ? WHERE id = ?", (text, source_id)
+        )
+        self.conn.commit()
+
+    def replace_proposals(self, source_id: int, facts: list[dict]) -> int:
+        """
+        Swap this source's pending proposals for a new reading. Facts the user
+        already confirmed or rejected stay as they were and aren't proposed again.
+        Returns how many new proposals were added.
+        """
+        now = _now()
+        self.conn.execute(
+            "DELETE FROM profile_facts WHERE source_id = ? AND status = 'proposed'", (source_id,)
+        )
+        decided = {
+            (r["kind"], r["text"].lower())
+            for r in self.conn.execute(
+                "SELECT kind, text FROM profile_facts WHERE source_id = ?", (source_id,)
+            ).fetchall()
+        }
+        rows = [
+            (source_id, f["kind"], f["text"], f["quote"], now, now)
+            for f in facts
+            if (f["kind"], f["text"].lower()) not in decided
+        ]
+        self.conn.executemany(
+            """
+            INSERT INTO profile_facts (source_id, kind, text, quote, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'proposed', ?, ?)
+            """,
+            rows,
+        )
+        self.conn.execute("UPDATE profile_sources SET read_at = ? WHERE id = ?", (now, source_id))
+        self.conn.commit()
+        return len(rows)
+
+    def list_source_facts(self) -> list[dict]:
+        """Every fact read from a source, except ones the user rejected."""
+        rows = self.conn.execute(
+            """
+            SELECT id, source_id, kind, text, quote, status, updated_at
+            FROM profile_facts
+            WHERE source_id IS NOT NULL AND status != 'rejected'
+            ORDER BY source_id, id
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_fact(self, fact_id: int) -> Optional[dict]:
+        row = self.conn.execute(
+            "SELECT id, source_id, kind, text, quote, status, updated_at FROM profile_facts WHERE id = ?",
+            (fact_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def update_fact(self, fact_id: int, *, status: Optional[str] = None, text: Optional[str] = None) -> Optional[dict]:
+        fact = self.get_fact(fact_id)
+        if fact is None or fact["source_id"] is None:
+            return None
+        if status is not None and status not in ("confirmed", "rejected", "proposed"):
+            raise ValueError("Unknown status.")
+        new_text = fact["text"] if text is None else _clean(text)[:MAX_SKILL * 2]
+        if not new_text:
+            raise ValueError("A fact can't be empty.")
+        self.conn.execute(
+            "UPDATE profile_facts SET status = ?, text = ?, updated_at = ? WHERE id = ?",
+            (status or fact["status"], new_text, _now(), fact_id),
+        )
+        self.conn.commit()
+        return self.get_fact(fact_id)
+
+    def confirm_all(self, source_id: int) -> int:
+        cur = self.conn.execute(
+            "UPDATE profile_facts SET status = 'confirmed', updated_at = ? WHERE source_id = ? AND status = 'proposed'",
+            (_now(), source_id),
+        )
+        self.conn.commit()
+        return cur.rowcount

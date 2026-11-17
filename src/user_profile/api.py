@@ -1,8 +1,10 @@
 """
-Profile API (Milestone 6.1). Mounted by bridge_server.py.
+Profile API (Milestone 6). Mounted by bridge_server.py.
 
-Everything here is local: uploads are stored under state/profile/ and read
-on this machine. Nothing in this module calls an AI service or fetches a URL.
+Uploads are stored under state/profile/ and their text is read on this
+machine. The only step that leaves the machine is POST .../read, which the
+user triggers per source after agreeing that the text goes to the AI service
+(and, for a website, fetches that one page).
 """
 
 from __future__ import annotations
@@ -14,10 +16,13 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from persistence.db import get_connection
 from persistence.repos.profile_repo import ProfileRepo
 from user_profile.extract import MAX_UPLOAD_BYTES, ExtractionError, extract_text
+from user_profile.facts import FactReadError, propose_facts
+from user_profile.website import WebsiteReadError, fetch_page_text
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
@@ -56,6 +61,7 @@ async def get_profile():
         repo = ProfileRepo(conn)
         return {
             "sources": [_public(s) for s in repo.list_sources()],
+            "facts": repo.list_source_facts(),
             "skills": repo.list_skills(),
             "preferences": repo.get_preferences(),
         }
@@ -194,5 +200,103 @@ async def put_preferences(payload: PreferencesPayload):
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return {"preferences": prefs}
+    finally:
+        conn.close()
+
+
+# ------------------------------------------------------------
+# 6.2 — Read it: propose facts from one source, then the user reviews them
+# ------------------------------------------------------------
+
+def _generate():
+    """The model call. Tests replace this so they never touch the network."""
+    from llm.adapter import LLMAdapter
+
+    return LLMAdapter().generate_structured
+
+
+class ReadPayload(BaseModel):
+    consent: bool = False
+
+
+@router.post("/sources/{source_id}/read")
+async def read_source(source_id: int, payload: ReadPayload):
+    if not payload.consent:
+        raise HTTPException(
+            status_code=400,
+            detail="Reading sends this source's text to the AI service. Agree to that first.",
+        )
+
+    conn = get_connection(_db_path())
+    try:
+        repo = ProfileRepo(conn)
+        source = repo.get_source(source_id, with_text=True)
+        if source is None:
+            raise HTTPException(status_code=404, detail="Source not found.")
+
+        text = source["text"]
+        if source["kind"] == "website":
+            try:
+                text = await run_in_threadpool(fetch_page_text, source["url"])
+            except WebsiteReadError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            repo.set_source_text(source_id, text)
+
+        try:
+            generate = _generate()
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail="Reading needs an OpenAI API key. Set OPENAI_API_KEY and restart the API server.",
+            )
+        try:
+            facts, dropped = await run_in_threadpool(propose_facts, text, source["kind"], generate)
+        except FactReadError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+        added = repo.replace_proposals(source_id, facts)
+        return {
+            "source": _public(repo.get_source(source_id)),
+            "facts": [f for f in repo.list_source_facts() if f["source_id"] == source_id],
+            "proposed": added,
+            "dropped": len(dropped),
+        }
+    finally:
+        conn.close()
+
+
+class FactPatch(BaseModel):
+    status: Optional[str] = None
+    text: Optional[str] = None
+
+
+@router.patch("/facts/{fact_id}")
+async def patch_fact(fact_id: int, payload: FactPatch):
+    """Keep, edit, or reject one proposed fact."""
+    conn = get_connection(_db_path())
+    try:
+        try:
+            fact = ProfileRepo(conn).update_fact(fact_id, status=payload.status, text=payload.text)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if fact is None:
+            raise HTTPException(status_code=404, detail="Fact not found.")
+        return {"fact": fact}
+    finally:
+        conn.close()
+
+
+@router.post("/sources/{source_id}/confirm-all")
+async def confirm_all(source_id: int):
+    conn = get_connection(_db_path())
+    try:
+        repo = ProfileRepo(conn)
+        if repo.get_source(source_id) is None:
+            raise HTTPException(status_code=404, detail="Source not found.")
+        confirmed = repo.confirm_all(source_id)
+        return {
+            "confirmed": confirmed,
+            "facts": [f for f in repo.list_source_facts() if f["source_id"] == source_id],
+        }
     finally:
         conn.close()

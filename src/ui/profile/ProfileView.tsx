@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 /**
  * Milestone 6.1 — the user's profile. Everything here is added by the user
@@ -18,6 +18,48 @@ type Source = {
   text_chars: number;
   text_preview: string;
 };
+
+type FactKind = "title" | "skill" | "domain" | "education" | "location" | "achievement";
+
+type Fact = {
+  id: number;
+  source_id: number;
+  kind: FactKind;
+  text: string;
+  quote: string | null;
+  status: "proposed" | "confirmed";
+};
+
+const FACT_KIND_LABELS: Record<FactKind, string> = {
+  title: "Roles",
+  skill: "Skills",
+  domain: "Fields",
+  education: "Education",
+  location: "Places",
+  achievement: "Things you did",
+};
+const FACT_KIND_ORDER: FactKind[] = ["title", "skill", "domain", "education", "location", "achievement"];
+
+const CONSENT_KEY = "letsappli.profileReadConsent.v1";
+
+/** Shared by every source on the page: its facts, and the one-time AI notice. */
+const FactsContext = createContext<{
+  facts: Fact[];
+  setSourceFacts: (sourceId: number, facts: Fact[]) => void;
+  updateFact: (fact: Fact) => void;
+  updateSource: (source: Source) => void;
+  askConsent: (sourceId: number) => Promise<boolean>;
+  consentFor: number | null;
+  answerConsent: (ok: boolean) => void;
+}>({
+  facts: [],
+  setSourceFacts: () => {},
+  updateFact: () => {},
+  updateSource: () => {},
+  askConsent: async () => false,
+  consentFor: null,
+  answerConsent: () => {},
+});
 
 type Preferences = {
   location: string[];
@@ -86,6 +128,8 @@ export function ProfileView({
   onOpenSaved: () => void;
 }) {
   const [sources, setSources] = useState<Source[] | null>(null);
+  const [facts, setFacts] = useState<Fact[]>([]);
+  const [consentAsk, setConsentAsk] = useState<{ sourceId: number; answer: (ok: boolean) => void } | null>(null);
   const [skills, setSkills] = useState<string[]>([]);
   const [prefs, setPrefs] = useState<Preferences>(EMPTY_PREFS);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +144,7 @@ export function ProfileView({
       if (!res.ok) throw new Error("Couldn't load your profile.");
       const data = await res.json();
       setSources(data.sources ?? []);
+      setFacts(data.facts ?? []);
       setSkills(data.skills ?? []);
       setPrefs({ ...EMPTY_PREFS, ...(data.preferences ?? {}) });
       setError(null);
@@ -161,9 +206,46 @@ export function ProfileView({
       return;
     }
     setSources((prev) => (prev ?? []).filter((s) => s.id !== source.id));
+    setFacts((prev) => prev.filter((f) => f.source_id !== source.id));
   };
 
   const addSource = (source: Source) => setSources((prev) => [source, ...(prev ?? [])]);
+
+  const factsApi = {
+    facts,
+    setSourceFacts: (sourceId: number, next: Fact[]) =>
+      setFacts((prev) => [...prev.filter((f) => f.source_id !== sourceId), ...next]),
+    updateFact: (fact: Fact) =>
+      setFacts((prev) =>
+        (fact.status as string) === "rejected"
+          ? prev.filter((f) => f.id !== fact.id)
+          : prev.map((f) => (f.id === fact.id ? fact : f)),
+      ),
+    updateSource: (source: Source) =>
+      setSources((prev) => (prev ?? []).map((s) => (s.id === source.id ? source : s))),
+    consentFor: consentAsk?.sourceId ?? null,
+    answerConsent: (ok: boolean) => consentAsk?.answer(ok),
+    askConsent: (sourceId: number) => {
+      try {
+        if (window.localStorage.getItem(CONSENT_KEY) === "yes") return Promise.resolve(true);
+      } catch {
+        /* storage unavailable: ask every time */
+      }
+      return new Promise<boolean>((resolve) => {
+        setConsentAsk({ sourceId, answer: (ok: boolean) => {
+          setConsentAsk(null);
+          if (ok) {
+            try {
+              window.localStorage.setItem(CONSENT_KEY, "yes");
+            } catch {
+              /* ignore */
+            }
+          }
+          resolve(ok);
+        } });
+      });
+    },
+  };
 
   const setPref = (kind: keyof Preferences, values: string[]) => savePrefs({ ...prefs, [kind]: values });
 
@@ -178,11 +260,12 @@ export function ProfileView({
         {savedNote && <span style={{ fontSize: 13, color: "#047857", alignSelf: "center" }}>{savedNote}</span>}
       </nav>
 
+      <FactsContext.Provider value={factsApi}>
       <div style={column}>
         <h1 style={h1}>Your profile</h1>
         <p style={meta}>
-          What you add here is stored only on this computer, and nothing on this page is sent to an AI. You can see
-          exactly what was read from each file, and remove anything.
+          What you add here is stored only on this computer. A document's text goes to the AI service only when you
+          press <b>Read it</b> on that document, and nothing it suggests joins your profile until you keep it.
         </p>
         {error && <p style={errorText}>{error}</p>}
 
@@ -256,10 +339,27 @@ export function ProfileView({
           </Field>
         </section>
 
-        <p style={{ ...meta, marginTop: 28 }}>
-          Coming next: a “Read it” button that suggests facts from your documents for you to confirm, and
-          recommendations based on your profile.
-        </p>
+        <p style={{ ...meta, marginTop: 28 }}>Coming next: roles recommended from your profile.</p>
+      </div>
+      </FactsContext.Provider>
+    </div>
+  );
+}
+
+function ConsentNotice({ onAnswer }: { onAnswer: (ok: boolean) => void }) {
+  return (
+    <div role="dialog" aria-label="Before reading" style={consentBox}>
+      <div style={{ fontWeight: 600, color: "#111827", marginBottom: 6 }}>Before letsA(ppl)I reads this</div>
+      <div style={{ ...hintText, color: "#374151" }}>
+        Reading sends this document's text (or, for a website, that one page) to OpenAI's API to suggest facts like
+        your roles, skills and education. Grades are left out. Nothing is added to your profile until you keep it,
+        and you'll only see this note once.
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button style={{ ...btn, background: "#111827", color: "#fff", borderColor: "#111827" }} onClick={() => onAnswer(true)}>
+          Read it
+        </button>
+        <button style={btn} onClick={() => onAnswer(false)}>Cancel</button>
       </div>
     </div>
   );
@@ -350,8 +450,17 @@ function SourceItem({
   source: Source;
   onRemove: (s: Source) => void;
 }) {
+  const ctx = useContext(FactsContext);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [readNote, setReadNote] = useState<string | null>(null);
+
+  const mine = ctx.facts.filter((f) => f.source_id === source.id);
+  const proposed = mine.filter((f) => f.status === "proposed");
+  const confirmed = mine.filter((f) => f.status === "confirmed");
+  const isWebsite = source.kind === "website";
 
   const toggle = async () => {
     if (!open && text === null) {
@@ -362,24 +471,83 @@ function SourceItem({
     setOpen((v) => !v);
   };
 
+  const read = async () => {
+    if (!(await ctx.askConsent(source.id))) return;
+    setReading(true);
+    setReadError(null);
+    setReadNote(null);
+    try {
+      const res = await fetch(apiUrl(`/api/profile/sources/${source.id}/read`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ consent: true }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.status === 404 && !data?.detail?.includes("Source")) {
+        throw new Error("The API server is running an older version. Restart bridge_server.py to read documents.");
+      }
+      if (!res.ok) throw new Error(data?.detail || "Couldn't read this.");
+      ctx.updateSource(data.source);
+      ctx.setSourceFacts(source.id, data.facts);
+      setText(null); // websites get fresh text
+      const parts = [
+        data.proposed === 0
+          ? "Nothing new to suggest."
+          : `${data.proposed} suggestion${data.proposed === 1 ? "" : "s"} to check below.`,
+      ];
+      if (data.dropped > 0) {
+        parts.push(`${data.dropped} left out because they weren't in the text as written.`);
+      }
+      setReadNote(parts.join(" "));
+    } catch (e) {
+      setReadError(e instanceof Error ? e.message : "Couldn't read this.");
+    } finally {
+      setReading(false);
+    }
+  };
+
+  const patch = async (fact: Fact, body: { status?: string; text?: string }) => {
+    const res = await fetch(apiUrl(`/api/profile/facts/${fact.id}`), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setReadError(data?.detail || "Couldn't save that.");
+      return;
+    }
+    ctx.updateFact(data.fact);
+  };
+
+  const keepAll = async () => {
+    const res = await fetch(apiUrl(`/api/profile/sources/${source.id}/confirm-all`), { method: "POST" });
+    const data = await res.json().catch(() => null);
+    if (res.ok) ctx.setSourceFacts(source.id, data.facts);
+  };
+
+  const status = isWebsite
+    ? source.read_at
+      ? `read ${addedOn(source.read_at)} · ${source.text_chars.toLocaleString()} characters`
+      : "saved as a link, not read yet"
+    : `${source.text_chars.toLocaleString()} characters read`;
+
   return (
     <div style={sourceItem}>
       <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
         <span style={{ fontWeight: 600, color: "#111827", wordBreak: "break-word" }}>
-          {source.kind === "website" && source.url ? (
+          {isWebsite && source.url ? (
             <a href={source.url} target="_blank" rel="noreferrer" style={{ color: "#185fa5" }}>{source.url}</a>
           ) : (
             source.label
           )}
         </span>
-        <span style={meta}>
-          added {addedOn(source.added_at)}
-          {source.kind === "website"
-            ? " · saved as a link, not read yet"
-            : ` · ${source.text_chars.toLocaleString()} characters read`}
-        </span>
+        <span style={meta}>added {addedOn(source.added_at)} · {status}</span>
         <span style={{ flex: 1 }} />
-        {source.kind !== "website" && (
+        <button style={{ ...linkBtn, fontWeight: 600 }} onClick={read} disabled={reading}>
+          {reading ? "Reading…" : source.read_at ? "Read again" : "Read it"}
+        </button>
+        {source.text_chars > 0 && (
           <button style={linkBtn} onClick={toggle} aria-expanded={open}>
             {open ? "Hide text" : "See what was read"}
           </button>
@@ -388,7 +556,117 @@ function SourceItem({
           Remove
         </button>
       </div>
+      {ctx.consentFor === source.id && <ConsentNotice onAnswer={ctx.answerConsent} />}
+      {readError && <div style={rowErrorText}>{readError}</div>}
+      {readNote && <div style={{ ...hintText, marginTop: 6 }}>{readNote}</div>}
       {open && <pre style={textBox}>{text ?? "Loading…"}</pre>}
+
+      {proposed.length > 0 && (
+        <div style={reviewBox}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div style={{ fontWeight: 600, color: "#111827" }}>Suggested from this {isWebsite ? "page" : "file"}</div>
+            <button style={btn} onClick={keepAll}>Keep all {proposed.length}</button>
+          </div>
+          <div style={{ ...hintText, marginBottom: 6 }}>Check each one. Only what you keep joins your profile.</div>
+          {FACT_KIND_ORDER.filter((k) => proposed.some((f) => f.kind === k)).map((kind) => (
+            <div key={kind} style={{ marginTop: 10 }}>
+              <div style={fieldLabel}>{FACT_KIND_LABELS[kind]}</div>
+              {proposed
+                .filter((f) => f.kind === kind)
+                .map((f) => (
+                  <ProposedFact
+                    key={f.id}
+                    fact={f}
+                    onKeep={(text) => patch(f, text === f.text ? { status: "confirmed" } : { status: "confirmed", text })}
+                    onReject={() => patch(f, { status: "rejected" })}
+                  />
+                ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {confirmed.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ ...hintText, marginBottom: 4 }}>In your profile from this {isWebsite ? "page" : "file"}:</div>
+          {FACT_KIND_ORDER.filter((k) => confirmed.some((f) => f.kind === k)).map((kind) => (
+            <div key={kind} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginTop: 4 }}>
+              <span style={{ fontSize: 12, color: "#6b7280", width: 92, flexShrink: 0, paddingTop: 4 }}>{FACT_KIND_LABELS[kind]}</span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1, minWidth: 0 }}>
+              {confirmed
+                .filter((f) => f.kind === kind)
+                .map((f) => (
+                  <span key={f.id} style={chip} title={f.quote ? `From: “${f.quote}”` : undefined}>
+                    {f.text}
+                    <button
+                      type="button"
+                      onClick={() => patch(f, { status: "rejected" })}
+                      style={chipX}
+                      aria-label={`Remove ${f.text} from your profile`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProposedFact({
+  fact,
+  onKeep,
+  onReject,
+}: {
+  fact: Fact;
+  onKeep: (text: string) => void;
+  onReject: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(fact.text);
+
+  return (
+    <div style={proposedRow}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {editing ? (
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && draft.trim()) onKeep(draft.trim());
+              if (e.key === "Escape") {
+                setDraft(fact.text);
+                setEditing(false);
+              }
+            }}
+            aria-label={`Edit ${fact.text}`}
+            autoFocus
+            style={{ ...input, width: "100%", boxSizing: "border-box" }}
+          />
+        ) : (
+          <div style={{ color: "#111827" }}>{fact.text}</div>
+        )}
+        {fact.quote && fact.quote.toLowerCase() !== fact.text.toLowerCase() && (
+          <div style={quoteText}>“{fact.quote}”</div>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
+        <button style={{ ...linkBtn, fontWeight: 600, color: "#047857" }} onClick={() => onKeep(editing ? draft.trim() || fact.text : fact.text)}>
+          Keep
+        </button>
+        {!editing && (
+          <button style={linkBtn} onClick={() => setEditing(true)}>
+            Edit
+          </button>
+        )}
+        <button style={{ ...linkBtn, color: "#6b7280" }} onClick={onReject}>
+          Not right
+        </button>
+      </div>
     </div>
   );
 }
@@ -581,6 +859,10 @@ const h1: React.CSSProperties = { fontSize: 24, fontWeight: 600, margin: "0 0 6p
 const h2: React.CSSProperties = { fontSize: 16, fontWeight: 600, margin: "0 0 8px", color: "#111827" };
 const meta: React.CSSProperties = { fontSize: 13, color: "#6b7280", margin: 0, lineHeight: 1.5 };
 const hintText: React.CSSProperties = { fontSize: 13, color: "#6b7280", lineHeight: 1.5 };
+const consentBox: React.CSSProperties = { marginTop: 10, padding: "14px 16px", border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 10 };
+const reviewBox: React.CSSProperties = { marginTop: 10, padding: "12px 14px", background: "#fff", border: "1px solid #dbe7f7", borderRadius: 8 };
+const proposedRow: React.CSSProperties = { display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0", borderTop: "1px solid #f3f4f6" };
+const quoteText: React.CSSProperties = { fontSize: 12, color: "#6b7280", marginTop: 2, fontStyle: "italic", wordBreak: "break-word" };
 const rowErrorText: React.CSSProperties = { color: "#b42318", fontSize: 13, marginTop: 8, lineHeight: 1.5 };
 const errorText: React.CSSProperties = { color: "#b42318", fontSize: 14, margin: "12px 0 0" };
 const section: React.CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "18px 20px", marginTop: 20 };

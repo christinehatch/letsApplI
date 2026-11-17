@@ -215,8 +215,11 @@ def test_preferences_reject_unknown_choices(client):
     assert "wizard" in res.json()["detail"]
 
 
-def test_nothing_in_the_profile_api_calls_ai():
-    source = Path(__file__).resolve().parents[2] / "src" / "user_profile"
-    text = "\n".join(p.read_text() for p in source.glob("*.py"))
-    for banned in ("openai", "anthropic", "Phase52Interpreter", "urlopen", "httpx", "requests"):
-        assert banned not in text
+def test_upload_and_storage_never_call_ai_or_the_network():
+    # AI and fetching live only behind "Read it" (facts.py, website.py, and the
+    # /read endpoint). Uploading, storing and showing text must stay local.
+    root = Path(__file__).resolve().parents[2] / "src"
+    for path in (root / "user_profile" / "extract.py", root / "persistence" / "repos" / "profile_repo.py"):
+        text = path.read_text()
+        for banned in ("openai", "anthropic", "LLMAdapter", "urlopen", "httpx", "requests", "urllib"):
+            assert banned not in text, f"{banned} in {path.name}"
