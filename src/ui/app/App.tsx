@@ -204,7 +204,14 @@ useEffect(() => {
 useEffect(() => {
   const fetchMarketAlignment = async () => {
     try {
-      const res = await fetch(apiUrl("/api/market-alignment"));
+      const params = new URLSearchParams();
+      if (locationFilter) params.set("location", locationFilter);
+      if (searchQuery) params.set("role", searchQuery);
+      if (companyFilter) params.set("company", companyFilter);
+      if (experienceFilter) params.set("experience", experienceFilter);
+      if (aiOnlyFilter) params.set("ai_filter", "ai_only");
+      const qs = params.toString();
+      const res = await fetch(apiUrl(`/api/market-alignment${qs ? `?${qs}` : ""}`));
       const data = await res.json();
       setMarketAlignment(
         data?.alignment && typeof data.alignment === "object" ? data.alignment : {}
@@ -1133,11 +1140,15 @@ function formatPostedDate(postedAt?: string | null): string {
   return posted.toLocaleDateString();
 }
 
+const LABEL_ACRONYMS = new Set(["ai", "ml", "ui", "ux", "qa", "sre", "llm", "nlp"]);
+
 function formatRoleLabel(role: string): string {
-  if (!role) return "All Roles";
+  if (!role) return "All roles";
   return role
     .replace(/[_-]+/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+    .split(" ")
+    .map((w) => (LABEL_ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
 }
 
 function cleanEvidenceText(raw: string): string {
@@ -1168,11 +1179,7 @@ const resolveEvidenceTexts = (spanIds: string[] = []): string[] => {
   return texts;
 };
 
-const formatSignalLabel = (signal: string): string =>
-  signal
-    .replace(/[_-]+/g, " ")
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+const formatSignalLabel = (signal: string): string => formatRoleLabel(signal.toLowerCase());
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -1350,10 +1357,34 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                   </CenterPanelShell>
               ) : !selectedJob ? (
                   <CenterPanelShell
-                    title={roleCategory ? `${formatRoleLabel(roleCategory)} Roles` : "Search"}
+                    title={roleCategory ? `${formatRoleLabel(roleCategory)} roles` : "Search"}
+                    actions={
+                      roleCategory ? (
+                        <button
+                          onClick={() =>
+                            updateUrlParams((params) => {
+                              params.delete("role");
+                              params.set("page", "1");
+                            })
+                          }
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: "999px",
+                            border: "1px solid #d1d5db",
+                            background: "#fff",
+                            color: "#374151",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          ← All areas
+                        </button>
+                      ) : undefined
+                    }
                     subtitle={
                       roleCategory
-                        ? "Explore currently active jobs in this role track."
+                        ? `${totalJobs} open ${totalJobs === 1 ? "role" : "roles"}${locationFilter ? ` in ${locationFilter}` : ""}${searchQuery ? ` matching “${searchQuery}”` : ""}`
                         : "Search every role letsA(ppl)I has found."
                     }
                     context={
@@ -1457,9 +1488,7 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                               return (
                                 <div
                                   key={signal}
-                                  onClick={() =>
-                                    setActiveRole(activeRole === signal ? null : signal)
-                                  }
+                                  onClick={() => handleSelectRoleCategory(signal)}
                                   style={{
                                     padding: "16px",
                                     border:
@@ -1562,7 +1591,7 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                         }}
                         title="Back to role jobs"
                       >
-                        ← {formatRoleLabel(roleCategory)} roles
+                        ← {roleCategory ? `${formatRoleLabel(roleCategory)} roles` : "All roles"}
                       </button>
                     )}
                   >

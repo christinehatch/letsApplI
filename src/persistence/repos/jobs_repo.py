@@ -15,6 +15,18 @@ class JobsRepo:
     def __init__(self, conn):
         self.conn = conn
         register_regexp(conn)
+        # Same area definition everywhere: stored signals, else signals read
+        # from the title. Lets SQL filter exactly what the counts count.
+        conn.create_function(
+            "JOB_SIGNALS",
+            2,
+            lambda payload, title: json.dumps(
+                self._extract_persisted_signals(
+                    raw_provider_payload_json=payload, title=title or ""
+                )
+            ),
+            deterministic=True,
+        )
 
     def list_new_jobs_since(self, since_iso: str) -> list[JobRecord]:
         rows = self.conn.execute(
@@ -393,12 +405,7 @@ class JobsRepo:
             where.append(
                 "EXISTS ("
                 "SELECT 1 "
-                "FROM json_each("
-                "CASE WHEN json_valid(raw_provider_payload_json) "
-                "THEN raw_provider_payload_json "
-                "ELSE '{}' END, "
-                "'$.signals'"
-                ") "
+                "FROM json_each(JOB_SIGNALS(raw_provider_payload_json, title)) "
                 f"WHERE LOWER(CAST(json_each.value AS TEXT)) IN ({placeholders})"
                 ")"
             )

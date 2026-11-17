@@ -128,10 +128,16 @@ export function TodayView({
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [s, t] = await Promise.all([
-        fetch(apiUrl("/api/saved-searches")).then((r) => r.json()),
-        fetch(apiUrl("/api/today")).then((r) => r.json()),
+      const [sRes, tRes] = await Promise.all([
+        fetch(apiUrl("/api/saved-searches")),
+        fetch(apiUrl("/api/today")),
       ]);
+      if (sRes.status === 404 || tRes.status === 404) {
+        setSearches(null);
+        setError("The letsA(ppl)I server is running an older version without Today. Restart it to use this page.");
+        return;
+      }
+      const [s, t] = await Promise.all([sRes.json(), tRes.json()]);
       setSearches(s?.searches ?? []);
       setToday(t ?? null);
     } catch {
@@ -212,6 +218,9 @@ export function TodayView({
     try {
       const res = await fetch(apiUrl("/api/discovery/refresh"), { method: "POST" });
       const data = await res.json().catch(() => null);
+      if (res.status === 404) {
+        throw new Error("The letsA(ppl)I server is running an older version without this button. Restart it and try again.");
+      }
       if (!res.ok) throw new Error(data?.detail || "Check failed.");
       const now = new Date().toISOString();
       writeLastChecked(now);
@@ -259,7 +268,7 @@ export function TodayView({
               <div>
                 <h1 style={h1}>
                   {searches === null
-                    ? "Loading…"
+                    ? error ? "Today isn't available yet" : "Loading…"
                     : searches.length === 0
                       ? "Build your Today"
                       : newShown > 0

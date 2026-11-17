@@ -165,6 +165,27 @@ def test_discovery_feed_filter_by_signal_uses_persisted_signals():
 
     jobs, total_jobs = repo.list_discovery_feed_jobs(signal="product")
 
-    assert total_jobs == 1
-    assert [j["job_id"] for j in jobs] == ["lever:github:4"]
-    assert jobs[0]["signals"] == ["product"]
+    # Stored signals win for jobs that have them (GitHub's title alone wouldn't
+    # say "product"); jobs without stored signals fall back to their title
+    # (Notion "Product Manager"), the same rule the area counts use.
+    by_id = {j["job_id"]: j for j in jobs}
+    assert total_jobs == 2
+    assert set(by_id) == {"lever:github:4", "greenhouse:notion:3"}
+    assert by_id["lever:github:4"]["signals"] == ["product"]
+
+
+def test_stored_signals_replace_title_signals():
+    conn = _create_db_with_jobs()
+    repo = JobsRepo(conn)
+
+    conn.execute(
+        "UPDATE jobs SET raw_provider_payload_json = ? WHERE provider_job_key = ?",
+        (json.dumps({"signals": ["backend"]}), "greenhouse:notion:3"),
+    )
+    conn.commit()
+
+    _, product_total = repo.list_discovery_feed_jobs(signal="product")
+    backend_jobs, _ = repo.list_discovery_feed_jobs(signal="backend")
+
+    assert product_total == 0
+    assert "greenhouse:notion:3" in {j["job_id"] for j in backend_jobs}

@@ -538,7 +538,14 @@ async def get_resume_signals():
 
 
 @app.get("/api/market-alignment")
-async def get_market_alignment():
+async def get_market_alignment(
+    location: Optional[str] = Query(None),
+    role: Optional[str] = Query(None, description="Keyword search, same as the feed"),
+    company: Optional[str] = Query(None),
+    experience: Optional[str] = Query(None),
+    ai_filter: Optional[str] = Query(None),
+):
+    """Counts per area for the roles that match the current filters."""
     from analysis.market_alignment import compute_market_alignment
     from persistence.db import get_connection
     from persistence.repos.jobs_repo import JobsRepo
@@ -562,6 +569,8 @@ async def get_market_alignment():
     if not resume_signals:
         return {"alignment": {}}
 
+    normalized_role, normalized_experience = _normalize_role_and_experience(role, experience)
+
     conn = get_connection(DB_PATH)
     try:
         repo = JobsRepo(conn)
@@ -573,6 +582,11 @@ async def get_market_alignment():
             jobs, total_jobs = repo.list_discovery_feed_jobs(
                 page=page,
                 page_size=page_size,
+                location=_normalize_filter(location),
+                role=normalized_role,
+                experience=normalized_experience,
+                company=_normalize_filter(company),
+                ai_filter=_normalize_filter(ai_filter),
             )
             all_jobs.extend(jobs)
             if len(all_jobs) >= total_jobs or not jobs:
