@@ -32,7 +32,7 @@ ROLE_SYNONYMS: Sequence[Sequence[str]] = (
     ("pm", "product manager", "product management"),
     ("tpm", "technical program manager"),
     ("em", "engineering manager"),
-    ("swe", "software engineer"),
+    ("swe", "software engineer", "software developer"),
     ("sre", "site reliability"),
     ("ux", "user experience"),
     ("ui", "user interface"),

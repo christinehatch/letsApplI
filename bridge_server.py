@@ -1015,9 +1015,13 @@ async def list_saved_searches():
 
     conn = get_connection(DB_PATH)
     try:
+        from user_profile.match import is_empty, load_profile
+
         repo = JobsRepo(conn)
         searches = SavedSearchesRepo(conn).list()
-        return {"searches": [summarize_search(repo, s) for s in searches]}
+        profile = load_profile(conn)
+        profile = None if is_empty(profile) else profile
+        return {"searches": [summarize_search(repo, s, profile) for s in searches]}
     finally:
         conn.close()
 
@@ -1042,7 +1046,10 @@ async def create_saved_search(payload: SavedSearchPayload):
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        return {"search": summarize_search(JobsRepo(conn), search)}
+        from user_profile.match import is_empty, load_profile
+
+        profile = load_profile(conn)
+        return {"search": summarize_search(JobsRepo(conn), search, None if is_empty(profile) else profile)}
     finally:
         conn.close()
 
@@ -1070,10 +1077,15 @@ async def today(limit: int = Query(15, ge=1, le=50)):
     from persistence.repos.saved_searches_repo import SavedSearchesRepo
     from state import DB_PATH
 
+    from user_profile.match import is_empty, load_profile
+
     conn = get_connection(DB_PATH)
     try:
         searches = SavedSearchesRepo(conn).list()
-        return build_today(JobsRepo(conn), searches, limit=limit)
+        profile = load_profile(conn)
+        return build_today(
+            JobsRepo(conn), searches, limit=limit, profile=None if is_empty(profile) else profile
+        )
     finally:
         conn.close()
 

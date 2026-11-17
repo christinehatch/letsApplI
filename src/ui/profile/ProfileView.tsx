@@ -265,6 +265,15 @@ export function ProfileView({
         </p>
         {error && <p style={errorText}>{error}</p>}
 
+        <SuggestedSearches
+          apiUrl={apiUrl}
+          onOpenToday={onOpenToday}
+          refreshKey={JSON.stringify([
+            facts.filter((f) => f.status === "confirmed" && f.kind === "title").map((f) => f.text),
+            prefs,
+          ])}
+        />
+
         <section style={section}>
           <h2 style={h2}>Documents</h2>
           {DOCUMENTS.map((doc) =>
@@ -351,10 +360,122 @@ export function ProfileView({
           </Field>
         </section>
 
-        <p style={{ ...meta, marginTop: 28 }}>Coming next: roles recommended from your profile.</p>
       </div>
       </FactsContext.Provider>
     </div>
+  );
+}
+
+type Suggestion = { name: string; role: string; location: string; open_count: number; why: string[] };
+
+/** 6.3: saved searches built from the roles you've kept and where you want to work. No AI. */
+function SuggestedSearches({
+  apiUrl,
+  onOpenToday,
+  refreshKey,
+}: {
+  apiUrl: (path: string) => string;
+  onOpenToday: () => void;
+  refreshKey: string;
+}) {
+  const [data, setData] = useState<{
+    suggestions: Suggestion[];
+    has_roles: boolean;
+    has_locations: boolean;
+    levels: string[];
+  } | null>(null);
+  const [added, setAdded] = useState<string[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      try {
+        const res = await fetch(apiUrl("/api/profile/suggested-searches"));
+        if (!res.ok) throw new Error();
+        const body = await res.json();
+        if (!cancelled) setData(body);
+      } catch {
+        if (!cancelled) setData(null);
+      }
+    }, 300); // let quick edits settle
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [apiUrl, refreshKey]);
+
+  const add = async (s: Suggestion) => {
+    setBusy(s.name);
+    setError(null);
+    try {
+      const res = await fetch(apiUrl("/api/saved-searches"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Include roles already open, so Today fills right away.
+        body: JSON.stringify({ role: s.role, location: s.location, name: s.name, include_existing: true }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.detail || "Couldn't add that search.");
+      setAdded((prev) => [...prev, s.name]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't add that search.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!data) return null;
+  const pending = data.suggestions.filter((s) => !added.includes(s.name));
+  const levelText = data.levels.length ? " at your levels" : "";
+
+  return (
+    <section style={section}>
+      <h2 style={h2}>Suggested for Today</h2>
+      {!data.has_roles ? (
+        <p style={hintText}>
+          Read your resume and keep the roles you've held. letsA(ppl)I will suggest searches from them, and Today will
+          fill itself with matching roles.
+        </p>
+      ) : (
+        <>
+          <p style={hintText}>
+            Searches built from roles you've kept and where you want to work. Each one only appears if it matches roles
+            open right now.
+          </p>
+          {!data.has_locations && (
+            <p style={{ ...hintText, color: "#92400e" }}>
+              These search every location. Add places under “Where and how you want to work” below to focus them.
+            </p>
+          )}
+          {pending.length === 0 && added.length === 0 && (
+            <p style={hintText}>No suggestions right now: none of your roles match open roles, or you've already saved them.</p>
+          )}
+          {pending.map((s) => (
+            <div key={s.name} style={{ ...proposedRow, alignItems: "center" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, color: "#111827" }}>{s.name}</div>
+                <div style={hintText}>
+                  {s.open_count.toLocaleString()} open {s.open_count === 1 ? "role" : "roles"}
+                  {levelText} · from {s.why.join(" · ")}
+                </div>
+              </div>
+              <button style={btn} onClick={() => add(s)} disabled={busy === s.name}>
+                {busy === s.name ? "Adding…" : "Add to Today"}
+              </button>
+            </div>
+          ))}
+          {added.length > 0 && (
+            <p style={{ ...hintText, color: "#047857", marginTop: 10 }}>
+              Added {added.join(", ")}.{" "}
+              <button style={{ ...linkBtn, fontWeight: 600 }} onClick={onOpenToday}>Open Today</button>
+            </p>
+          )}
+          {error && <div style={rowErrorText}>{error}</div>}
+        </>
+      )}
+    </section>
   );
 }
 

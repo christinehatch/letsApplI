@@ -31,6 +31,7 @@ type TodayItem = {
   first_seen_at: string | null;
   posted_at?: string | null;
   signals: string[];
+  why?: string[];
   source: { type: "search" | "later"; name: string; search_id?: number };
 };
 
@@ -39,6 +40,7 @@ type TodayResponse = {
   new_total: number;
   new_shown: number;
   later_count: number;
+  hidden?: Partial<Record<"level" | "industry", { count: number; terms: string[] }>>;
 };
 
 type Decision = "saved" | "ignored" | "later";
@@ -298,15 +300,33 @@ export function TodayView({
               <p style={note}>This polls every company board letsA(ppl)I follows. It can take a minute or two.</p>
             )}
             {checkResult && !checking && <p style={note}>{checkResult}</p>}
+            {today?.hidden && (today.hidden.level || today.hidden.industry) && (
+              <p style={note}>
+                Left out because of your profile preferences:{" "}
+                {[
+                  today.hidden.level &&
+                    `${today.hidden.level.count} at levels you didn't pick (${today.hidden.level.terms.join(", ")})`,
+                  today.hidden.industry &&
+                    `${today.hidden.industry.count} mentioning ${today.hidden.industry.terms.join(", ")}`,
+                ]
+                  .filter(Boolean)
+                  .join("; ")}
+                .{" "}
+                <button style={{ ...linkBtn, color: "#185fa5" }} onClick={onOpenProfile}>Change in Profile</button>
+              </p>
+            )}
 
             {searches && searches.length === 0 && (
               <div style={{ ...card, marginTop: 24 }}>
                 <p style={{ margin: "0 0 6px", fontWeight: 600 }}>Save a search to start</p>
                 <p style={{ margin: "0 0 14px", color: "#555" }}>
-                  Run a search, then choose “Save this search”. Today shows only roles that are new in your saved
-                  searches, a few at a time.
+                  Run a search, then choose “Save this search”, or let your profile suggest searches from your
+                  resume. Today shows only roles that are new in your saved searches, a few at a time.
                 </p>
-                <button style={btn} onClick={onOpenSearch}>Go to search</button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button style={btn} onClick={onOpenProfile}>Suggestions from my profile</button>
+                  <button style={btn} onClick={onOpenSearch}>Go to search</button>
+                </div>
               </div>
             )}
 
@@ -358,6 +378,11 @@ export function TodayView({
                   .join(" · ")}
               </div>
               <h2 style={{ fontSize: 22, fontWeight: 600, margin: "6px 0 10px", color: "#111827" }}>{current.title}</h2>
+              {current.why && current.why.length > 0 && (
+                <p style={{ margin: "0 0 10px", fontSize: 13, color: "#047857" }}>
+                  <span style={{ fontWeight: 600 }}>Why this showed up:</span> {current.why.join(" · ")}
+                </p>
+              )}
               {current.signals.length > 0 && (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {current.signals.map((s) => (

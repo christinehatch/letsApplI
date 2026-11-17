@@ -344,3 +344,35 @@ async def confirm_all(source_id: int):
         }
     finally:
         conn.close()
+
+
+# ------------------------------------------------------------
+# 6.3 — Suggested searches from the profile (deterministic, no AI)
+# ------------------------------------------------------------
+
+@router.get("/suggested-searches")
+async def suggested_searches():
+    from discovery.today import count_visible
+    from persistence.repos.jobs_repo import JobsRepo
+    from persistence.repos.saved_searches_repo import SavedSearchesRepo
+    from user_profile.match import is_empty, load_profile, suggest_searches
+
+    conn = get_connection(_db_path())
+    try:
+        jobs = JobsRepo(conn)
+        profile = load_profile(conn)
+        filters = None if is_empty(profile) else profile
+
+        def count_open(search: dict) -> int:
+            # Counted the way Today shows them: levels and industries you ruled out aren't counted.
+            return count_visible(jobs, search, filters)
+
+        suggestions = suggest_searches(profile, count_open, SavedSearchesRepo(conn).list())
+        return {
+            "suggestions": suggestions,
+            "has_roles": bool(profile["titles"]),
+            "has_locations": bool(profile["locations"] or profile["location_facts"] or "remote" in profile["work_mode"]),
+            "levels": profile["levels"],
+        }
+    finally:
+        conn.close()

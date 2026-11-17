@@ -82,6 +82,7 @@ def _group(repo: JobsRepo, rows: Iterable, source: dict) -> "OrderedDict[tuple, 
                 "posted_at": r[7],
                 "signals": _signals(repo, r[6], r[2]),
                 "source": source,
+                "_payload": r[6],  # used for matching, removed before returning
             }
         item["job_ids"].append(r[0])
         if r[3] and r[3] not in item["locations"]:
@@ -94,9 +95,41 @@ def _group(repo: JobsRepo, rows: Iterable, source: dict) -> "OrderedDict[tuple, 
     return groups
 
 
-def summarize_search(repo: JobsRepo, search: dict) -> dict:
-    open_groups = _group(repo, _matching_rows(repo, search, only_new=False), {})
-    new_groups = _group(repo, _matching_rows(repo, search, only_new=True), {})
+def _spread_companies(items: list[dict]) -> list[dict]:
+    """Keep the order, but avoid the same company twice in a row while others remain."""
+    queues: "OrderedDict[str, list[dict]]" = OrderedDict()
+    for i in items:
+        queues.setdefault((i["company"] or "").lower(), []).append(i)
+    out: list[dict] = []
+    while queues:
+        for company in list(queues):
+            out.append(queues[company].pop(0))
+            if not queues[company]:
+                del queues[company]
+    return out
+
+
+def count_visible(repo: JobsRepo, search: dict, profile: Optional[dict]) -> int:
+    """Open roles for a search that the user's preferences don't rule out."""
+    from user_profile import match
+
+    groups = _group(repo, _matching_rows(repo, search, only_new=False), {}).values()
+    if not profile:
+        return len(groups)
+    return sum(1 for g in groups if not match.hidden_reason(g, profile))
+
+
+def summarize_search(repo: JobsRepo, search: dict, profile: Optional[dict] = None) -> dict:
+    """Counts match what Today shows: with a profile, roles it rules out aren't counted."""
+    from user_profile import match
+
+    def visible(groups):
+        if not profile:
+            return groups
+        return OrderedDict((k, g) for k, g in groups.items() if not match.hidden_reason(g, profile))
+
+    open_groups = visible(_group(repo, _matching_rows(repo, search, only_new=False), {}))
+    new_groups = visible(_group(repo, _matching_rows(repo, search, only_new=True), {}))
     companies = Counter(g["company"] for g in open_groups.values())
     return {
         **{k: search[k] for k in ("id", "name", "role", "location", "company", "created_at")},
@@ -107,11 +140,46 @@ def summarize_search(repo: JobsRepo, search: dict) -> dict:
     }
 
 
-def build_today(repo: JobsRepo, searches: list[dict], *, limit: int = DEFAULT_LIMIT) -> dict:
+def build_today(
+    repo: JobsRepo,
+    searches: list[dict],
+    *,
+    limit: int = DEFAULT_LIMIT,
+    profile: Optional[dict] = None,
+) -> dict:
+    """
+    `profile` (user_profile.match.load_profile) is optional. With it, roles
+    the user's own preferences rule out are left out and counted, and each
+    item says which profile entries it matches.
+    """
+    from user_profile import match
+
+    hidden: Counter = Counter()
+    hidden_terms: dict[str, set] = {"level": set(), "industry": set()}
+
+    def keep(item: dict) -> bool:
+        if not profile:
+            return True
+        why_hidden = match.hidden_reason(item, profile)
+        if why_hidden:
+            kind, detail = why_hidden
+            hidden[kind] += 1
+            hidden_terms[kind].add(detail)
+            return False
+        return True
+
     per_search: list[list[dict]] = []
     for s in searches:
         source = {"type": "search", "search_id": s["id"], "name": s["name"]}
-        per_search.append(list(_group(repo, _matching_rows(repo, s, only_new=True), source).values()))
+        items = [i for i in _group(repo, _matching_rows(repo, s, only_new=True), source).values() if keep(i)]
+        if profile:
+            # Roles matching more of the profile first (newest first among equals),
+            # then take turns between companies so one busy employer can't fill the day.
+            for i in items:
+                i["why"] = match.reasons(i, profile)
+            items.sort(key=lambda i: -len(i["why"]))
+            items = _spread_companies(items)
+        per_search.append(items)
 
     total_new_keys = {(_group_key(i["company"], i["title"])) for items in per_search for i in items}
 
@@ -149,10 +217,21 @@ def build_today(repo: JobsRepo, searches: list[dict], *, limit: int = DEFAULT_LI
         if k not in seen
     ]
 
+    items = queue + later_items
+    for item in items:
+        if "why" not in item:
+            item["why"] = match.reasons(item, profile) if profile else []
+        item.pop("_payload", None)
+
     return {
-        "items": queue + later_items,
+        "items": items,
         "new_total": len(total_new_keys),
         "new_shown": len(queue),
         "later_count": len(later_items),
         "limit": limit,
+        "hidden": {
+            kind: {"count": hidden[kind], "terms": sorted(hidden_terms[kind])}
+            for kind in ("level", "industry")
+            if hidden[kind]
+        },
     }
