@@ -133,7 +133,7 @@ export const JobCard = memo(function JobCard({
   const SAVED_STATES = ["saved", "applied", "interview", "offer"];
   // Most boards don't publish a posted date; fall back to when letsA(ppl)I first saw the role.
   const dateLabel = job.posted_at
-    ? `Posted ${formatPostedDate(job.posted_at)}`
+    ? `Posted ${formatPostedDate(job.posted_at).replace(/^Today$/, "today")}`
     : job.first_seen_at
       ? `First seen ${formatPostedDate(job.first_seen_at).toLowerCase()}`
       : null;
@@ -276,12 +276,20 @@ export const JobCard = memo(function JobCard({
           </button>
         )}
       </div>
-      {job.location && (
-        <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>{job.location}</div>
+      {isRow ? (
+        <div style={{ fontSize: "12px", color: "#666", marginTop: "2px" }}>
+          {[job.location, dateLabel].filter(Boolean).join(" · ")}
+        </div>
+      ) : (
+        <>
+          {job.location && (
+            <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>{job.location}</div>
+          )}
+          <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+            {dateLabel}
+          </div>
+        </>
       )}
-      <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
-        {dateLabel}
-      </div>
       {job.closed_at && (
         <div style={{ fontSize: "12px", color: "#b42318", marginTop: "4px", fontWeight: 500 }}>
           No longer posted

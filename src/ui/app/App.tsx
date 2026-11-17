@@ -4,7 +4,7 @@ import { type Phase6SidePanelHandle } from "../phase6/Phase6SidePanel";
 import { FeedSidebar } from "../feed/FeedSidebar";
 import { isLikelyAiRole } from "../feed/JobCard";
 import { SavedJobsBoard } from "../feed/SavedJobsBoard";
-import MarketJobGrid from "../components/MarketJobGrid";
+import { SearchResults } from "../feed/SearchResults";
 import { ApplyAIHandoff } from "../components/ApplyAIHandoff";
 import { JobDetail } from "../job/JobDetail";
 import { TodayView } from "../today/TodayView";
@@ -60,8 +60,6 @@ const [interpretationNotice, setInterpretationNotice] = useState<string | null>(
 const [newJobsCount, setNewJobsCount] = useState<number | null>(null);
 const [jobListScrollTop, setJobListScrollTop] = useState(0);
 const [scrollRestoreKey] = useState(0);
-const [searchDraft, setSearchDraft] = useState("");
-const isEditingTopSearchRef = useRef(false);
 const [activeRole, setActiveRole] = useState<string | null>(null);
 const pendingAutoSelectRoleRef = useRef<string | null>(null);
 type SkippedEntry = { job: any; index: number };
@@ -99,11 +97,6 @@ const roleOptions = (Object.keys(marketAlignment).length > 0
 ).sort();
 const apiBase = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const apiUrl = (path: string) => `${apiBase}${path}`;
-
-useEffect(() => {
-  if (isEditingTopSearchRef.current) return;
-  setSearchDraft(searchQuery);
-}, [searchQuery]);
 
 useEffect(() => {
   const fetchNewJobsCount = async () => {
@@ -358,11 +351,6 @@ const updateFilters = (
     params.set("page", "1");
     params.delete("selected");
   });
-};
-
-const performSearch = () => {
-  updateFilters({ role: searchDraft.trim() });
-  setViewMode("feed");
 };
 
  // --- Handlers ---
@@ -1357,220 +1345,34 @@ const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
                     />
                   </CenterPanelShell>
               ) : !selectedJob ? (
-                  <CenterPanelShell
-                    title={roleCategory ? `${formatRoleLabel(roleCategory)} roles` : "Search"}
-                    actions={
-                      roleCategory ? (
-                        <button
-                          onClick={() =>
-                            updateUrlParams((params) => {
-                              params.delete("role");
-                              params.set("page", "1");
-                            })
-                          }
-                          style={{
-                            padding: "6px 10px",
-                            borderRadius: "999px",
-                            border: "1px solid #d1d5db",
-                            background: "#fff",
-                            color: "#374151",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                          }}
-                        >
-                          ← All areas
-                        </button>
-                      ) : undefined
+                  <SearchResults
+                    jobs={locallyFilteredJobs}
+                    totalJobs={totalJobs}
+                    page={page}
+                    pageSize={pageSize}
+                    totalPages={totalPages}
+                    onPage={(next) => {
+                      setPage(next);
+                      mainContentRef.current?.scrollTo({ top: 0 });
+                    }}
+                    location={locationFilter}
+                    keyword={searchQuery}
+                    area={roleCategory || null}
+                    areas={marketAlignment}
+                    areasLoaded={marketAlignmentLoaded}
+                    areaLabel={formatSignalLabel}
+                    onSelectArea={handleSelectRoleCategory}
+                    onClearArea={() =>
+                      updateUrlParams((params) => {
+                        params.delete("role");
+                        params.set("page", "1");
+                      })
                     }
-                    subtitle={
-                      roleCategory
-                        ? `${totalJobs} open ${totalJobs === 1 ? "role" : "roles"}${locationFilter ? ` in ${locationFilter}` : ""}${searchQuery ? ` matching “${searchQuery}”` : ""}`
-                        : "Search every role letsA(ppl)I has found."
-                    }
-                    context={
-                      !roleCategory && newJobsCount !== null && newJobsCount > 0 ? (
-                        <div
-                          style={{
-                            padding: "10px 12px",
-                            borderRadius: "10px",
-                            border: "1px solid #bfdbfe",
-                            background: "#eff6ff",
-                            color: "#1d4ed8",
-                            fontWeight: 600,
-                            maxWidth: "700px",
-                          }}
-                        >
-                          {newJobsCount} new jobs since your last visit
-                        </div>
-                      ) : undefined
-                    }
-                  >
-                  <div style={{ color: "#333" }}>
-                      {viewMode === "feed" && !!roleCategory && !selectedJobId ? (
-                        <MarketJobGrid
-                          jobs={displayedJobs}
-                          selectedJob={selectedJob}
-                          onSelectJob={handleJobSelect}
-                          onSaveJob={handleSaveJob}
-                        />
-                      ) : (
-                      <>
-                      <h1 style={{ marginBottom: "8px" }}>Find a role</h1>
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          performSearch();
-                        }}
-                        style={{ marginBottom: "16px", maxWidth: "700px" }}
-                      >
-                        <div style={{ display: "flex", gap: "10px" }}>
-                        <input
-                          type="text"
-                          value={searchDraft}
-                          onChange={(e) => setSearchDraft(e.target.value)}
-                          onFocus={() => {
-                            isEditingTopSearchRef.current = true;
-                          }}
-                          onBlur={() => {
-                            isEditingTopSearchRef.current = false;
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              performSearch();
-                            }
-                          }}
-                          placeholder="Search for roles or companies"
-                          style={{
-                            flex: 1,
-                            padding: "12px 14px",
-                            borderRadius: "10px",
-                            border: "1px solid #d1d5db",
-                            background: "#fff",
-                            fontSize: "15px",
-                          }}
-                        />
-                        <button
-                          type="submit"
-                          style={{
-                            padding: "12px 16px",
-                            borderRadius: "10px",
-                            border: "1px solid #d1d5db",
-                            background: "#fff",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                          }}
-                        >
-                          Search
-                        </button>
-                        </div>
-                      </form>
-                      <p style={{ color: "#666", marginBottom: "20px" }}>
-                        or browse by area
-                      </p>
-                      {!marketAlignmentLoaded ? (
-                        <div style={{ fontSize: "13px", color: "#777" }}>
-                          Loading alignment data...
-                        </div>
-                      ) : Object.keys(marketAlignment).length === 0 ? (
-                        <div style={{ fontSize: "13px", color: "#777" }}>
-                          No resume signals configured.
-                        </div>
-                      ) : (
-                        <div style={{ display: "grid", gap: "16px", marginTop: "16px", maxWidth: "700px" }}>
-                          {(() => {
-                            const entries = Object.entries(marketAlignment).sort((a, b) => b[1] - a[1]);
-                            const maxCount = entries.reduce((max, [, count]) => Math.max(max, count), 0);
-
-                            return entries.map(([signal, count]) => {
-                              const width = maxCount > 0 ? (count / maxCount) * 100 : 0;
-
-                              return (
-                                <div
-                                  key={signal}
-                                  onClick={() => handleSelectRoleCategory(signal)}
-                                  style={{
-                                    padding: "16px",
-                                    border:
-                                      activeRole === signal
-                                        ? "1px solid #4f7fff"
-                                        : "1px solid #e5e7eb",
-                                    borderRadius: "10px",
-                                    background: activeRole === signal ? "#eef2ff" : "#ffffff",
-                                    cursor: "pointer",
-                                    transition: "box-shadow 0.15s ease",
-                                    boxShadow:
-                                      activeRole === signal
-                                        ? "0 4px 12px rgba(79,127,255,0.18)"
-                                        : "0 1px 2px rgba(0,0,0,0.06)",
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)";
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.06)";
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      fontSize: "18px",
-                                      fontWeight: 600,
-                                      color: "#1f2937",
-                                      marginBottom: "6px",
-                                    }}
-                                  >
-                                    {formatSignalLabel(signal)}
-                                  </div>
-                                  <div
-                                    style={{
-                                      color: "#4b5563",
-                                      fontSize: "14px",
-                                      marginBottom: "10px",
-                                    }}
-                                  >
-                                    {count} open roles
-                                  </div>
-                                  <div
-                                    style={{
-                                      height: "10px",
-                                      background: "#eceff3",
-                                      borderRadius: "999px",
-                                      overflow: "hidden",
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        height: "100%",
-                                        width: `${width}%`,
-                                        background: "#4f7fff",
-                                        borderRadius: "999px",
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                              );
-                            });
-                          })()}
-                        </div>
-                      )}
-                      {(activeSignalFilter.length > 0 || filters.role.trim().length > 0) && (
-                        <div style={{ marginTop: "30px", color: "#555", fontSize: "14px" }}>
-                          {visibleJobs.length > 0
-                            ? `Select a role from the left list (${visibleJobs.length} shown).`
-                            : "No matching roles found."}
-                        </div>
-                      )}
-                      <MarketJobGrid
-                        jobs={locallyFilteredJobs}
-                        selectedJob={selectedJob}
-                        onSelectJob={handleJobSelect}
-                        onSaveJob={handleSaveJob}
-                      />
-                      </>
-                      )}
-                  </div>
-                  </CenterPanelShell>
+                    newSinceLastVisit={newJobsCount}
+                    selectedJobId={selectedJobId || null}
+                    onSelectJob={handleJobSelect}
+                    onSaveJob={handleSaveJob}
+                  />
               ) : (
                   <JobDetail
                     job={selectedJob}
