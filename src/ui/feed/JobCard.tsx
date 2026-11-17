@@ -31,6 +31,9 @@ function formatProvider(provider?: string): string {
   if (normalized === "greenhouse_job_board_api" || normalized === "greenhouse") {
     return "Greenhouse";
   }
+  if (normalized === "ashby_job_board_api" || normalized === "ashby") {
+    return "Ashby";
+  }
   if (normalized === "lever_job_board_api" || normalized === "lever") {
     return "Lever";
   }

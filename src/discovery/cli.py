@@ -132,7 +132,7 @@ def main() -> None:
     sp = sub.add_parser("seed-registry")
     sp.add_argument(
         "--provider",
-        choices=["all", "greenhouse", "lever"],
+        choices=["all", "greenhouse", "lever", "ashby"],
         default="all",
     )
     sp.add_argument("--poll-interval-minutes", type=int, default=360)

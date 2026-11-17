@@ -9,11 +9,13 @@ from discovery.registry import load_registry, save_registry
 from discovery.store import DiscoveryStore
 from discovery.signals.greenhouse import GreenhouseAdapter
 from discovery.signals.lever import LeverAdapter
+from discovery.signals.ashby import AshbyAdapter
 
 
 ADAPTERS: Dict[str, object] = {
     "greenhouse_job_board_api": GreenhouseAdapter(),
     "lever_job_board_api": LeverAdapter(),
+    "ashby_job_board_api": AshbyAdapter(),
 }
 
 

@@ -5,92 +5,82 @@ from typing import Iterable, List, Literal, Tuple
 from discovery.models import Signal
 
 
-Provider = Literal["greenhouse", "lever", "all"]
+Provider = Literal["greenhouse", "lever", "ashby", "all"]
 
 
-# Curated seeds intended for discovery bootstrapping.
-# Some endpoints may become unavailable over time; poll loop availability
-# handling will mark those signals as unavailable without failing globally.
+# Curated seeds intended for discovery bootstrapping. Each company is listed
+# under the job board service it actually uses (verified 2026-11-17 against
+# each public API). Boards can move over time; the poll loop marks a failing
+# board unavailable without failing globally.
 GREENHOUSE_COMPANIES: Tuple[Tuple[str, str], ...] = (
-    ("Stripe", "stripe"),
-    ("OpenAI", "openai"),
-    ("Notion", "notion"),
+    ("Airbnb", "airbnb"),
+    ("Airtable", "airtable"),
+    ("Algolia", "algolia"),
+    ("Anthropic", "anthropic"),
+    ("Asana", "asana"),
+    ("Attentive", "attentive"),
+    ("Brex", "brex"),
+    ("Checkr", "checkr"),
+    ("CircleCI", "circleci"),
+    ("Cloudflare", "cloudflare"),
+    ("Coinbase", "coinbase"),
     ("Databricks", "databricks"),
     ("Discord", "discord"),
-    ("Uber", "uber"),
-    ("Reddit", "reddit"),
-    ("Lyft", "lyft"),
-    ("GitHub", "github"),
-    ("Airbnb", "airbnb"),
-    ("Coinbase", "coinbase"),
-    ("Figma", "figma"),
-    ("Canva", "canva"),
-    ("Asana", "asana"),
-    ("Miro", "miro"),
     ("Dropbox", "dropbox"),
-    ("Robinhood", "robinhood"),
-    ("Retool", "retool"),
-    ("Brex", "brex"),
-    ("Snowflake", "snowflake"),
-    ("Cloudflare", "cloudflare"),
-    ("Amplitude", "amplitude"),
-    ("Plaid", "plaid"),
-    ("Rippling", "rippling"),
+    ("Figma", "figma"),
+    ("Flexport", "flexport"),
     ("Gusto", "gusto"),
-    ("Samsara", "samsara"),
-    ("Doordash", "doordash"),
+    ("Human Interest", "humaninterest"),
     ("Instacart", "instacart"),
+    ("Intercom", "intercom"),
+    ("Lattice", "lattice"),
+    ("LaunchDarkly", "launchdarkly"),
+    ("Lyft", "lyft"),
+    ("Maven Clinic", "mavenclinic"),
+    ("Mercury", "mercury"),
     ("Pinterest", "pinterest"),
-    ("Airtable", "airtable"),
-    ("Postman", "postman"),
-    ("Linear", "linear"),
+    ("PlanetScale", "planetscale"),
+    ("Reddit", "reddit"),
+    ("Robinhood", "robinhood"),
+    ("Roblox", "roblox"),
+    ("Samsara", "samsara"),
+    ("Scale AI", "scaleai"),
+    ("Stripe", "stripe"),
     ("Vercel", "vercel"),
-    ("Sourcegraph", "sourcegraph"),
-    ("Benchling", "benchling"),
 )
 
-LEVER_COMPANIES: Tuple[Tuple[str, str], ...] = (
-    ("Plaid", "plaid"),
-    ("Rippling", "rippling"),
-    ("Scale AI", "scaleai"),
-    ("Flexport", "flexport"),
-    ("Figma", "figma"),
-    ("Coinbase", "coinbase"),
-    ("Segment", "segment"),
-    ("PostHog", "posthog"),
-    ("Netflix", "netflix"),
-    ("Anthropic", "anthropic"),
-    ("Roblox", "roblox"),
-    ("Sentry", "sentry"),
-    ("HashiCorp", "hashicorp"),
-    ("PlanetScale", "planetscale"),
-    ("Render", "render"),
-    ("Clerk", "clerk"),
-    ("Temporal", "temporal"),
-    ("Snyk", "snyk"),
-    ("Algolia", "algolia"),
-    ("CircleCI", "circleci"),
-    ("Airtable", "airtable"),
-    ("Zapier", "zapier"),
+ASHBY_COMPANIES: Tuple[Tuple[str, str], ...] = (
     ("1Password", "1password"),
-    ("LaunchDarkly", "launchdarkly"),
-    ("Intercom", "intercom"),
-    ("Webflow", "webflow"),
-    ("Attentive", "attentive"),
-    ("Ramp", "ramp"),
-    ("Deel", "deel"),
-    ("Checkr", "checkr"),
-    ("Scribd", "scribd"),
-    ("Lattice", "lattice"),
-    ("Confluent", "confluent"),
-    ("Maven Clinic", "maven"),
-    ("Patreon", "patreon"),
+    ("Amplitude", "amplitude"),
+    ("Benchling", "benchling"),
+    ("Clerk", "clerk"),
     ("Headway", "headway"),
+    ("Linear", "linear"),
+    ("Miro", "miro"),
     ("Notion", "notion"),
+    ("OpenAI", "openai"),
+    ("Patreon", "patreon"),
+    ("Plaid", "plaid"),
     ("Pleo", "pleo"),
-    ("Mercury", "mercury"),
-    ("Human Interest", "humaninterest"),
+    ("PostHog", "posthog"),
+    ("Ramp", "ramp"),
+    ("Render", "render"),
+    ("Sentry", "sentry"),
+    ("Snowflake", "snowflake"),
+    ("Snyk", "snyk"),
+    ("Temporal", "temporal"),
+    ("Webflow", "webflow"),
+    ("Zapier", "zapier"),
 )
+
+# None of the seeded companies currently publish on Lever; the adapter stays
+# available for companies added by hand (cli add-lever).
+LEVER_COMPANIES: Tuple[Tuple[str, str], ...] = ()
+
+# Seeded before, but no public Greenhouse, Lever, or Ashby board was found
+# (most use Workday or an in-house system). Kept here so they aren't re-added
+# by mistake: Canva, Confluent, Deel, DoorDash, GitHub, HashiCorp, Netflix,
+# Postman, Retool, Rippling, Scribd, Segment, Sourcegraph, Uber.
 
 
 def _greenhouse_signals(poll_interval_minutes: int) -> Iterable[Signal]:
@@ -115,6 +105,17 @@ def _lever_signals(poll_interval_minutes: int) -> Iterable[Signal]:
         )
 
 
+def _ashby_signals(poll_interval_minutes: int) -> Iterable[Signal]:
+    for company, board_name in ASHBY_COMPANIES:
+        yield Signal(
+            signal_id=f"ashby:{board_name}",
+            company=company,
+            method="ashby_job_board_api",
+            poll_interval_minutes=poll_interval_minutes,
+            config={"board_name": board_name},
+        )
+
+
 def seeded_signals(
     *,
     provider: Provider = "all",
@@ -127,6 +128,9 @@ def seeded_signals(
 
     if provider in ("all", "lever"):
         out.extend(_lever_signals(poll_interval_minutes))
+
+    if provider in ("all", "ashby"):
+        out.extend(_ashby_signals(poll_interval_minutes))
 
     # Deduplicate by signal_id while preserving order.
     seen = set()
